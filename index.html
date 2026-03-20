@@ -993,7 +993,15 @@ function getAnthropicEndpoint() {
     // Local development with API key - use direct API
     return 'https://api.anthropic.com/v1/messages';
   }
-  // Production on Netlify or localhost without key - use proxy
+  // Production on Netlify - try Edge Function first, fallback to regular function
+  // Edge Function path (preferred, requires Netlify Pro/paid plan)
+  // Regular function path (fallback, works on all plans)
+  const isNetlify = window.location.hostname.includes('netlify.app') || window.location.hostname.includes('netlify.com');
+  if (isNetlify) {
+    // Try Edge Function first, will fallback to regular function if Edge Functions unavailable
+    return '/api/anthropic';
+  }
+  // Default to Edge Function path
   return '/api/anthropic';
 }
 
