@@ -221,6 +221,102 @@ body::before {
     font-size: 10px;
     padding: 6px 12px;
   }
+  
+  /* Social calendar grid - make horizontally scrollable on tablet/mobile */
+  #social-cal-grid {
+    display: grid !important;
+    grid-template-columns: repeat(7, minmax(90px, 1fr)) !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+    padding-bottom: 8px;
+    margin: 0 -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  #social-cal-grid::-webkit-scrollbar {
+    height: 4px;
+  }
+  #social-cal-grid::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  #social-cal-grid::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 2px;
+  }
+  #social-cal-grid::-webkit-scrollbar-thumb:hover {
+    background: var(--border2);
+  }
+  #social-cal-grid > * {
+    min-width: 90px;
+  }
+  
+  /* Calendar day adjustments */
+  .cal-day {
+    min-height: 70px;
+    padding: 6px 4px;
+  }
+  .cal-day-header {
+    font-size: 9px;
+    padding: 4px 0;
+  }
+  .cal-post {
+    font-size: 9.5px;
+    padding: 3px 5px;
+  }
+  
+  /* Calendar detail section */
+  #social-cal-detail {
+    margin-top: 16px !important;
+  }
+  #social-cal-text {
+    overflow-y: auto !important;
+    max-height: 400px;
+  }
+  #social-cal-text > div {
+    padding: 10px 12px !important;
+    gap: 10px !important;
+    flex-wrap: wrap;
+  }
+  #social-cal-text > div > div:first-child {
+    min-width: 40px !important;
+    flex-shrink: 0;
+  }
+  #social-cal-text > div > div:nth-child(2) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  #social-cal-text > div > div:last-child {
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+  #social-cal-text > div > div:nth-child(2) > div {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+  
+  /* Confirm button row */
+  #social-confirm-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    width: 100%;
+  }
+  #social-confirm-row button {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  /* Card label with button - stack on mobile */
+  .social-cal-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+  .social-cal-header > button {
+    align-self: stretch;
+    width: 100%;
+  }
 }
 
 @media(max-width:480px) {
@@ -338,6 +434,64 @@ body::before {
     padding: 6px 4px;
     min-height: 60px;
     font-size: 10px;
+  }
+  
+  /* Social calendar grid - make horizontally scrollable on mobile */
+  #social-cal-grid {
+    display: grid !important;
+    grid-template-columns: repeat(7, minmax(100px, 1fr)) !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+    padding-bottom: 8px;
+    margin: 0 -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  #social-cal-grid::-webkit-scrollbar {
+    height: 4px;
+  }
+  #social-cal-grid::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  #social-cal-grid::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 2px;
+  }
+  #social-cal-grid::-webkit-scrollbar-thumb:hover {
+    background: var(--border2);
+  }
+  #social-cal-grid > * {
+    min-width: 100px;
+  }
+  
+  /* Calendar detail section */
+  #social-cal-detail {
+    margin-top: 16px !important;
+  }
+  #social-cal-text {
+    overflow-y: auto !important;
+    max-height: 400px;
+  }
+  #social-cal-text > div {
+    padding: 10px 12px !important;
+    gap: 10px !important;
+  }
+  #social-cal-text > div > div:first-child {
+    min-width: 40px !important;
+  }
+  
+  /* Confirm button row */
+  #social-confirm-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    width: 100%;
+  }
+  #social-confirm-row button {
+    width: 100%;
+    justify-content: center;
   }
 }
 
@@ -907,9 +1061,9 @@ body::before {
 
         <!-- Weekly social calendar -->
     <div style="margin-top:24px" class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px" class="social-cal-header">
         <div class="card-label" style="margin-bottom:0">Proactive Weekly Social Calendar</div>
-        <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px" id="social-cal-btn" onclick="runSocialCalendar()">
+        <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px;flex-shrink:0" id="social-cal-btn" onclick="runSocialCalendar()">
           Generate This Week's Plan
         </button>
       </div>
@@ -917,7 +1071,7 @@ body::before {
 
       <div id="social-strategy-strip" style="display:none;background:rgba(201,168,76,0.08);border:1px solid var(--gold-dim);border-radius:8px;padding:12px 16px;font-size:13px;color:var(--txt2);line-height:1.6;margin-bottom:16px"></div>
 
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px" id="social-cal-grid">
+      <div style="display:grid;grid-template-columns:repeat(7,minmax(100px,1fr));gap:6px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch" id="social-cal-grid">
         <div class="cal-day-header">Mon</div><div class="cal-day-header">Tue</div><div class="cal-day-header">Wed</div>
         <div class="cal-day-header">Thu</div><div class="cal-day-header">Fri</div><div class="cal-day-header">Sat</div>
         <div class="cal-day-header">Sun</div>
@@ -940,7 +1094,7 @@ body::before {
             </button>
           </div>
         </div>
-        <div class="output-block" id="social-cal-text" style="min-height:80px;padding:0;overflow:hidden;border-radius:8px"></div>
+        <div class="output-block" id="social-cal-text" style="min-height:80px;padding:0;overflow-y:auto;max-height:500px;border-radius:8px"></div>
       </div>
     </div>
 
