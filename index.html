@@ -101,27 +101,12 @@ body::before {
 
 /* ── Workflow nav ── */
 .workflow-nav {
-  display: flex; gap: 8px; margin-bottom: 40px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 40px;
   border-bottom: 1px solid var(--border);
   padding-bottom: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-.workflow-nav::-webkit-scrollbar {
-  height: 4px;
-}
-.workflow-nav::-webkit-scrollbar-track {
-  background: transparent;
-}
-.workflow-nav::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 2px;
-}
-.workflow-nav::-webkit-scrollbar-thumb:hover {
-  background: var(--border2);
 }
 .wf-tab {
   padding: 10px 22px;
@@ -130,10 +115,9 @@ body::before {
   color: var(--txt3); cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  transition: color 0.2s, border-color 0.2s;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
   letter-spacing: 0.03em;
   white-space: nowrap;
-  flex-shrink: 0;
 }
 .wf-tab:hover { color: var(--txt2); }
 .wf-tab.active { color: var(--gold); border-bottom-color: var(--gold); }
@@ -202,14 +186,40 @@ body::before {
     padding: 24px 16px 60px;
   }
   
-  /* Workflow nav - smaller padding on mobile */
+  /* Workflow nav — stack vertically so all tabs are visible (no horizontal scroll) */
   .workflow-nav {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 0;
     margin-bottom: 32px;
-    gap: 4px;
+    border-bottom: none;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    padding-bottom: 0;
   }
   .wf-tab {
-    padding: 10px 16px;
-    font-size: 12px;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: left;
+    white-space: normal;
+    padding: 12px 16px;
+    font-size: 13px;
+    margin-bottom: 0;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid transparent;
+    border-radius: 0;
+  }
+  .wf-tab:last-child {
+    border-bottom: none;
+  }
+  .wf-tab:hover { color: var(--txt2); }
+  .wf-tab.active {
+    color: var(--gold);
+    border-left-color: var(--gold);
+    background: rgba(201, 168, 76, 0.08);
   }
   
   /* Status pills */
@@ -338,8 +348,8 @@ body::before {
   }
   
   .wf-tab {
-    padding: 10px 12px;
-    font-size: 11px;
+    padding: 12px 14px;
+    font-size: 12px;
   }
   
   /* Cards */
