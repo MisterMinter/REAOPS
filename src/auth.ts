@@ -13,6 +13,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           Google({
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            // TEMPORARY: Link Google to an existing User row with the same email (e.g. seed
+            // without Account row). Without this, Auth.js throws OAuthAccountNotLinked.
+            // TODO: Turn off after accounts are linked; Google verifies email.
+            allowDangerousEmailAccountLinking: true,
           }),
         ]
       : []),
