@@ -1,20 +1,56 @@
 import Link from "next/link";
 import { auth } from "@/auth";
+import { MarketingPackWorkspace } from "@/components/marketing/MarketingPackWorkspace";
+import type { MarketingWorkspaceRow } from "@/components/marketing/MarketingPackWorkspace";
 import { type DriveFolderRef, listDriveListingFolders } from "@/lib/drive";
 import { getGoogleAccessTokenForUser } from "@/lib/google-account-token";
+import type { ListingFacts } from "@/lib/marketing-generate";
 import { getOnboardingSnapshot } from "@/lib/onboarding";
-import { type MarketingListingSource, buildMarketingListingRows } from "@/lib/marketing-listings";
+import { buildMarketingListingRows } from "@/lib/marketing-listings";
 import { prisma } from "@/lib/prisma";
 
-function sourceLabel(source: MarketingListingSource) {
-  const labels: Record<MarketingListingSource, string> = {
-    hubspot: "HubSpot",
-    drive: "Drive",
-    both: "HubSpot + Drive",
-    zillow: "Zillow",
-    zillow_drive: "Zillow + Drive",
+function driveOnlyFacts(title: string): ListingFacts {
+  return {
+    address: title,
+    city: "",
+    state: "",
+    zip: "",
+    beds: null,
+    baths: null,
+    sqft: null,
+    priceDisplay: "—",
+    features: "",
+    status: "Active",
+    daysOnMarket: null,
   };
-  return labels[source];
+}
+
+function factsFromCached(c: {
+  address: string;
+  city: string;
+  state: string;
+  zip: string | null;
+  beds: number | null;
+  baths: number | null;
+  sqft: number | null;
+  priceDisplay: string;
+  features: string | null;
+  status: string;
+  daysOnMarket: number | null;
+}): ListingFacts {
+  return {
+    address: c.address,
+    city: c.city,
+    state: c.state,
+    zip: c.zip ?? "",
+    beds: c.beds,
+    baths: c.baths,
+    sqft: c.sqft,
+    priceDisplay: c.priceDisplay,
+    features: c.features ?? "",
+    status: c.status,
+    daysOnMarket: c.daysOnMarket,
+  };
 }
 
 export default async function MarketingPage() {
@@ -62,26 +98,34 @@ export default async function MarketingPage() {
   }
 
   const tenantId = user.tenantId;
-  const driveCfg = await prisma.driveConfig.findUnique({
-    where: { tenantId },
-    select: { rootFolderId: true },
-  });
 
-  const cached = await prisma.cachedListing.findMany({
-    where: { tenantId },
-    select: {
-      id: true,
-      hubspotId: true,
-      address: true,
-      shortAddress: true,
-      driveFolderId: true,
-    },
-  });
+  const [tenant, driveCfg, cachedFull] = await Promise.all([
+    prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { defaultTone: true },
+    }),
+    prisma.driveConfig.findUnique({
+      where: { tenantId },
+      select: { rootFolderId: true },
+    }),
+    prisma.cachedListing.findMany({
+      where: { tenantId },
+      orderBy: { shortAddress: "asc" },
+    }),
+  ]);
+
+  const cachedSlices = cachedFull.map((c) => ({
+    id: c.id,
+    hubspotId: c.hubspotId,
+    address: c.address,
+    shortAddress: c.shortAddress,
+    driveFolderId: c.driveFolderId,
+  }));
+  const cachedById = new Map(cachedFull.map((c) => [c.id, c]));
 
   let driveFolders: DriveFolderRef[] = [];
   let driveListError: string | null = null;
-  const driveToken =
-    (await getGoogleAccessTokenForUser(user.id)) ?? session?.accessToken ?? null;
+  const driveToken = await getGoogleAccessTokenForUser(user.id);
   if (driveCfg && driveToken) {
     try {
       driveFolders = await listDriveListingFolders(driveToken, driveCfg.rootFolderId);
@@ -101,24 +145,35 @@ export default async function MarketingPage() {
       "No usable Google token for Drive (missing refresh token or refresh failed). Sign out, sign in again with the same Google account. First-time consent must include offline access so a refresh token is stored.";
   }
 
-  const rows = buildMarketingListingRows(cached, driveFolders);
+  const rows = buildMarketingListingRows(cachedSlices, driveFolders);
+
+  const workspaceListings: MarketingWorkspaceRow[] = rows.map((row) => {
+    const cached = row.cachedListingId ? cachedById.get(row.cachedListingId) : undefined;
+    return {
+      key: row.key,
+      title: row.title,
+      source: row.source,
+      driveFolderId: row.driveFolderId,
+      facts: cached ? factsFromCached(cached) : driveOnlyFacts(row.title),
+    };
+  });
+
+  const defaultTone =
+    tenant?.defaultTone ?? "Warm but professional. First-name basis. No pressure.";
 
   return (
     <div>
       <h1 className="font-display text-3xl text-[var(--txt)]">Listing Marketing Pack</h1>
       <p className="mt-2 max-w-2xl text-[var(--txt2)]">
-        Properties appear from <strong className="text-[var(--txt)]">subfolders</strong> under your Drive root (folder
-        name = street address; photos inside), and from <strong className="text-[var(--txt)]">HubSpot</strong> when
-        listings are synced. Same page for both — Drive supplies photos either way.
+        Pick a property, choose a <strong className="text-[var(--txt)]">hero photo</strong> from Drive, then generate
+        MLS copy, Instagram caption, email subjects, and card line — same flow as the original demo, wired to your data.
       </p>
 
       <div className="mt-8 grid gap-4 lg:grid-cols-3">
         <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Properties</div>
           <div className="mt-2 font-display text-3xl text-[var(--gold)]">{snap?.listingCount ?? rows.length}</div>
-          <p className="mt-2 text-xs text-[var(--txt3)]">
-            Drive subfolders + HubSpot rows (duplicates merged when a listing is linked to a folder)
-          </p>
+          <p className="mt-2 text-xs text-[var(--txt3)]">Drive folders + CRM / Zillow rows</p>
         </div>
         <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">HubSpot</div>
@@ -154,70 +209,27 @@ export default async function MarketingPage() {
         </p>
       )}
 
-      <section className="mt-10 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6">
-        <h2 className="font-medium text-[var(--txt)]">Your properties</h2>
-        <p className="mt-2 text-sm text-[var(--txt3)]">
-          Photos for each row load from Drive via{" "}
-          <code className="text-[var(--teal)]">/api/drive/photos?folderId=…</code> (hero picker and generation wiring
-          next).
-        </p>
-        {rows.length === 0 ? (
-          <p className="mt-6 text-sm text-[var(--txt2)]">
-            No properties yet. Under{" "}
+      {rows.length === 0 ? (
+        <section className="mt-10 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6">
+          <h2 className="font-medium text-[var(--txt)]">No properties yet</h2>
+          <p className="mt-2 text-sm text-[var(--txt2)]">
+            Under{" "}
             <Link href="/settings" className="text-[var(--teal)] hover:underline">
               Settings → Google Drive
             </Link>
-            , set the root folder that contains one subfolder per listing (named with the address). Or sync listings
-            from HubSpot when that integration is enabled.
+            , set the root folder with one subfolder per listing. Or sync from HubSpot / Zillow when configured.
           </p>
-        ) : (
-          <div className="mt-6 overflow-x-auto">
-            <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
-                  <th className="py-3 pr-4 font-semibold">Address / folder</th>
-                  <th className="py-3 pr-4 font-semibold">Source</th>
-                  <th className="py-3 font-semibold">Drive folder ID</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.key} className="border-b border-[var(--border)]/80 text-[var(--txt2)]">
-                    <td className="py-3 pr-4 text-[var(--txt)]">{row.title}</td>
-                    <td className="py-3 pr-4">
-                      <span className="rounded-md border border-[var(--border2)] px-2 py-0.5 text-xs text-[var(--txt3)]">
-                        {sourceLabel(row.source)}
-                      </span>
-                    </td>
-                    <td className="py-3 font-mono text-xs text-[var(--teal)]">
-                      {row.driveFolderId ?? "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+        </section>
+      ) : (
+        <MarketingPackWorkspace listings={workspaceListings} defaultTone={defaultTone} />
+      )}
 
-      <div className="mt-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-        <h2 className="font-medium text-[var(--txt)]">Next steps</h2>
-        <ol className="mt-3 list-inside list-decimal space-y-2 text-sm text-[var(--txt2)]">
-          <li>
-            <Link href="/settings" className="text-[var(--teal)] hover:underline">
-              Settings
-            </Link>
-            : Drive root folder ID + optional HubSpot
-          </li>
-          <li>Pick a property and hero photo, then generate MLS copy, captions, and email lines (Claude integration)</li>
-        </ol>
-        <Link
-          href="/start"
-          className="mt-6 inline-block text-sm font-medium text-[var(--gold)] hover:underline"
-        >
-          ← Back to Start checklist
-        </Link>
-      </div>
+      <Link
+        href="/start"
+        className="mt-10 inline-block text-sm font-medium text-[var(--gold)] hover:underline"
+      >
+        ← Back to Start checklist
+      </Link>
     </div>
   );
 }
