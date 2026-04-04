@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 export default async function AdminUsersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; deleted?: string }>;
 }) {
   const q = await searchParams;
   const users = await prisma.user.findMany({
@@ -28,8 +28,18 @@ export default async function AdminUsersPage({
         Google sign-in only works after a user row exists with a matching email. Add users here before they sign in
         for the first time.
       </p>
+      {q.deleted && <p className="mt-4 text-sm text-[var(--green)]">User removed.</p>}
       {q.error === "user" && (
         <p className="mt-4 text-sm text-[var(--coral)]">Missing user id.</p>
+      )}
+      {q.error === "self-deactivate" && (
+        <p className="mt-4 text-sm text-[var(--coral)]">You cannot deactivate your own account.</p>
+      )}
+      {q.error === "self-delete" && (
+        <p className="mt-4 text-sm text-[var(--coral)]">You cannot delete your own account.</p>
+      )}
+      {q.error === "last-admin-delete" && (
+        <p className="mt-4 text-sm text-[var(--coral)]">Cannot delete the only platform admin.</p>
       )}
       <ul className="mt-8 divide-y divide-[var(--border)] rounded-lg border border-[var(--border)] bg-[var(--card)]">
         {users.length === 0 && (
@@ -45,16 +55,24 @@ export default async function AdminUsersPage({
                 {u.isActive ? "" : " · inactive"}
               </div>
             </div>
-            <form action={setUserActiveFromForm} className="flex shrink-0 gap-2">
-              <input type="hidden" name="userId" value={u.id} />
-              <input type="hidden" name="isActive" value={u.isActive ? "false" : "true"} />
-              <button
-                type="submit"
-                className="rounded-md border border-[var(--border2)] px-3 py-1.5 text-xs text-[var(--txt)] hover:border-[var(--gold)]"
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Link
+                href={`/admin/users/${u.id}`}
+                className="rounded-md border border-[var(--border2)] px-3 py-1.5 text-xs text-[var(--teal)] hover:border-[var(--gold)]"
               >
-                {u.isActive ? "Deactivate" : "Activate"}
-              </button>
-            </form>
+                Edit
+              </Link>
+              <form action={setUserActiveFromForm} className="inline">
+                <input type="hidden" name="userId" value={u.id} />
+                <input type="hidden" name="isActive" value={u.isActive ? "false" : "true"} />
+                <button
+                  type="submit"
+                  className="rounded-md border border-[var(--border2)] px-3 py-1.5 text-xs text-[var(--txt)] hover:border-[var(--gold)]"
+                >
+                  {u.isActive ? "Deactivate" : "Activate"}
+                </button>
+              </form>
+            </div>
           </li>
         ))}
       </ul>
