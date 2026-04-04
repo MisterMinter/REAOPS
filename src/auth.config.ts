@@ -26,10 +26,7 @@ export const authConfig = {
     maxAge: 30 * 24 * 60 * 60,
   },
   callbacks: {
-    async signIn() {
-      // TEMPORARY: open Google sign-in; re-enable whitelist later.
-      return true;
-    },
+    // signIn with DB whitelist lives in `auth.ts` only (Prisma; not safe on Edge middleware).
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id as string;
