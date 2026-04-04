@@ -23,7 +23,7 @@ npm run dev
 - Set `NEXTAUTH_URL` to `https://reaops.com` (or your Railway URL before the custom domain is attached).
 - In **Google Cloud Console** (same project as Drive / GCS): OAuth client **Authorized redirect URI**  
   `https://reaops.com/api/auth/callback/google` (and the Railway URL during staging).
-- **Build:** `npm run build` (default Nixpacks is fine).
+- **Build:** `npm run build` (forces `NODE_ENV=production` for `next build`; Railpack sometimes injects a non-standard `NODE_ENV`, which otherwise breaks Next.js 15 prerender of error pages).
 - **Start:** `npm run start`.
 - **Release / one-off:** after the first deploy, run `npx prisma migrate deploy` and `npm run db:seed` against production (Railway shell or a release phase), then remove seed from routine deploys if you prefer.
 
