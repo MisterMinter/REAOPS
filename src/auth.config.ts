@@ -1,8 +1,15 @@
 import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
+import type { UserRole } from "@prisma/client";
+
+export function userRoleFromAdapterUser(user: unknown): UserRole {
+  const r = (user as { role?: string } | null | undefined)?.role;
+  if (r === "ADMIN" || r === "BROKER_OWNER" || r === "AGENT") return r;
+  return "AGENT";
+}
 
 /**
- * Edge-safe Auth.js config (no Prisma). Used by middleware only.
+ * Edge-safe Auth.js config (no Prisma client). Used by middleware only.
  * Full Node config with adapter + DB events lives in `auth.ts`.
  */
 export const authConfig = {
@@ -14,6 +21,14 @@ export const authConfig = {
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
             allowDangerousEmailAccountLinking: true,
+            authorization: {
+              params: {
+                scope:
+                  "openid email profile https://www.googleapis.com/auth/drive.readonly",
+                access_type: "offline",
+                prompt: "consent",
+              },
+            },
           }),
         ]
       : []),
@@ -30,7 +45,7 @@ export const authConfig = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id as string;
-        token.role = (user as { role?: string }).role ?? "AGENT";
+        token.role = userRoleFromAdapterUser(user);
         token.tenantId = ((user as { tenantId?: string | null }).tenantId ?? null) as string | null;
       }
       return token;
@@ -41,6 +56,10 @@ export const authConfig = {
         session.user.role = (token.role as typeof session.user.role) ?? "AGENT";
         session.user.tenantId = (token.tenantId as string | null) ?? null;
       }
+      session.accessToken =
+        typeof token.googleAccessToken === "string" ? token.googleAccessToken : undefined;
+      session.error =
+        typeof token.googleAccessError === "string" ? token.googleAccessError : undefined;
       return session;
     },
   },

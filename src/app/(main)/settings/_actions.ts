@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { uploadTenantLogo } from "@/lib/storage";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 type TenantEditor = {
   userId: string;
@@ -63,10 +64,15 @@ export async function uploadTenantLogoFromSettings(formData: FormData) {
   if (!ctx?.canEdit) throw new Error("Forbidden");
 
   const file = formData.get("logo") as File | null;
-  if (!file || file.size === 0) throw new Error("No file");
+  if (!file || file.size === 0) redirect("/settings?error=logo-no-file");
 
   const buf = Buffer.from(await file.arrayBuffer());
-  const url = await uploadTenantLogo(ctx.tenantId, buf, file.type);
+  let url: string;
+  try {
+    url = await uploadTenantLogo(ctx.tenantId, buf, file.type);
+  } catch {
+    redirect("/settings?error=logo-invalid");
+  }
 
   await prisma.tenant.update({
     where: { id: ctx.tenantId },
@@ -75,4 +81,5 @@ export async function uploadTenantLogoFromSettings(formData: FormData) {
   revalidatePath("/settings");
   revalidatePath("/marketing");
   revalidatePath("/assistant");
+  redirect("/settings?saved=logo");
 }

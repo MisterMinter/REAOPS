@@ -7,8 +7,14 @@ import {
   uploadTenantLogoFromSettings,
 } from "@/app/(main)/settings/_actions";
 import { SettingsForms } from "@/app/(main)/settings/settings-forms";
+import { hasLegacyRelativeLogoPath, resolveTenantLogoForDisplay } from "@/lib/tenant-logo";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; saved?: string }>;
+}) {
+  const q = await searchParams;
   const session = await auth();
   const user = session?.user;
 
@@ -69,6 +75,22 @@ export default async function SettingsPage() {
         </section>
       )}
 
+      {q.saved === "logo" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          Logo saved.
+        </p>
+      )}
+      {q.error === "logo-invalid" && (
+        <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
+          Logo must be PNG, JPEG, WebP, or GIF and under ~400KB.
+        </p>
+      )}
+      {q.error === "logo-no-file" && (
+        <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
+          Choose an image file before uploading.
+        </p>
+      )}
+
       {tenant && (
         <SettingsForms
           tenant={{
@@ -80,6 +102,8 @@ export default async function SettingsPage() {
             logoUrl: tenant.logoUrl,
             hubspotListingObject: tenant.hubspotListingObject,
           }}
+          logoPreviewUrl={resolveTenantLogoForDisplay(tenant.logoUrl)}
+          legacyRelativeLogo={hasLegacyRelativeLogoPath(tenant.logoUrl)}
           driveRootFolderId={tenant.driveConfig?.rootFolderId ?? ""}
           hubspotConnected={!!tenant.hubspotTokens}
           hubspotHubId={tenant.hubspotTokens?.hubId ?? null}

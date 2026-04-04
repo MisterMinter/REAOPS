@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { Topbar } from "@/components/shell/topbar";
 import { WorkflowNav } from "@/components/shell/workflow-nav";
 import { prisma } from "@/lib/prisma";
+import { resolveTenantLogoForDisplay } from "@/lib/tenant-logo";
 
 export default async function MainAppLayout({
   children,
@@ -19,7 +20,7 @@ export default async function MainAppLayout({
     if (t) {
       tenantPreview = {
         displayName: t.brokerageName ?? t.name,
-        logoUrl: t.logoUrl,
+        logoUrl: resolveTenantLogoForDisplay(t.logoUrl),
       };
     }
   }

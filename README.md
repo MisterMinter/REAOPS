@@ -23,7 +23,7 @@ npm run dev
 
 - Provision **PostgreSQL** and set `DATABASE_URL` on the web service.
 - Set `NEXTAUTH_URL` to `https://reaops.com` (or your Railway URL before the custom domain is attached).
-- In **Google Cloud Console** (same project as Drive / GCS): OAuth client **Authorized redirect URI**  
+- In **Google Cloud Console** (OAuth for sign-in and Drive): **Authorized redirect URI**  
   `https://reaops.com/api/auth/callback/google` (and the Railway URL during staging).
 - **Build:** `npm run build` (forces `NODE_ENV=production` for `next build`; Railpack sometimes injects a non-standard `NODE_ENV`, which otherwise breaks Next.js 15 prerender of error pages).
 - **Start:** `npm run start`.
@@ -31,8 +31,7 @@ npm run dev
 
 ### Tenant logos
 
-- **Recommended:** GCS bucket + `GCS_BUCKET_LOGOS`, `GCS_PUBLIC_BASE_URL` (optional), `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`.
-- **Local:** files go to `public/uploads/tenants/{id}/` (gitignored).
+- Stored in the database as a **data URL** (PNG, JPEG, WebP, or GIF, ~400KB max). After deploys on Railway, **re-upload** if an old row still points at a `/uploads/...` path from disk.
 
 ## Legacy static demo
 

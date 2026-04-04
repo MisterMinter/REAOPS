@@ -75,7 +75,12 @@ export async function uploadTenantLogoAction(tenantId: string, formData: FormDat
   if (!file || file.size === 0) redirect(`/admin/tenants/${tenantId}?error=no-file`);
 
   const buf = Buffer.from(await file.arrayBuffer());
-  const url = await uploadTenantLogo(tenantId, buf, file.type);
+  let url: string;
+  try {
+    url = await uploadTenantLogo(tenantId, buf, file.type);
+  } catch {
+    redirect(`/admin/tenants/${tenantId}?error=logo-invalid`);
+  }
 
   await prisma.tenant.update({
     where: { id: tenantId },

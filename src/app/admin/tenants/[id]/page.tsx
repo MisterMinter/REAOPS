@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { uploadTenantLogoAction, updateTenant } from "@/app/admin/_actions/tenants";
 import { DEFAULT_DEAL_MAPPING } from "@/lib/hubspot-mapping";
 import { prisma } from "@/lib/prisma";
+import { hasLegacyRelativeLogoPath, resolveTenantLogoForDisplay } from "@/lib/tenant-logo";
 
 export default async function EditTenantPage({
   params,
@@ -24,6 +25,8 @@ export default async function EditTenantPage({
 
   const boundUpdate = updateTenant.bind(null, tenant.id);
   const boundLogo = uploadTenantLogoAction.bind(null, tenant.id);
+  const logoPreview = resolveTenantLogoForDisplay(tenant.logoUrl);
+  const legacyLogo = hasLegacyRelativeLogoPath(tenant.logoUrl);
 
   return (
     <div>
@@ -39,12 +42,22 @@ export default async function EditTenantPage({
         <p className="mt-4 text-sm text-[var(--coral)]">HubSpot mapping must be valid JSON.</p>
       )}
       {q.error === "no-file" && <p className="mt-4 text-sm text-[var(--coral)]">Choose an image file.</p>}
+      {q.error === "logo-invalid" && (
+        <p className="mt-4 text-sm text-[var(--coral)]">
+          Logo must be PNG, JPEG, WebP, or GIF and under ~400KB.
+        </p>
+      )}
 
       <section className="mt-10 max-w-2xl">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--txt3)]">Broker logo</h2>
-        {tenant.logoUrl && (
+        {legacyLogo && (
+          <p className="mt-2 text-sm text-[var(--amber)]">
+            Old logo path no longer resolves on this server — upload again (logos are now stored in the database).
+          </p>
+        )}
+        {logoPreview && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={tenant.logoUrl} alt="" className="mt-2 h-16 w-auto object-contain" />
+          <img src={logoPreview} alt="" className="mt-2 h-16 w-auto object-contain" />
         )}
         <form action={boundLogo} encType="multipart/form-data" className="mt-4 flex flex-wrap items-end gap-4">
           <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/gif" required />
@@ -53,8 +66,7 @@ export default async function EditTenantPage({
           </button>
         </form>
         <p className="mt-2 text-xs text-[var(--txt3)]">
-          Production: set <code className="text-[var(--teal)]">GCS_BUCKET_LOGOS</code> and service account env
-          vars. Local dev stores under <code className="text-[var(--teal)]">/public/uploads</code>.
+          Logos are stored in the database (data URL). Max ~400KB.
         </p>
       </section>
 

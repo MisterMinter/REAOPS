@@ -15,6 +15,10 @@ type TenantProps = {
 
 type Props = {
   tenant: TenantProps;
+  /** Resolved for <img src> (legacy /uploads paths omitted). */
+  logoPreviewUrl: string | null;
+  /** True when DB still has a /uploads path that no longer resolves on this host. */
+  legacyRelativeLogo: boolean;
   driveRootFolderId: string;
   hubspotConnected: boolean;
   hubspotHubId: string | null;
@@ -31,6 +35,8 @@ type Props = {
 
 export function SettingsForms({
   tenant,
+  logoPreviewUrl,
+  legacyRelativeLogo,
   driveRootFolderId,
   hubspotConnected,
   hubspotHubId,
@@ -105,12 +111,18 @@ export function SettingsForms({
       <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
         <h2 className="font-display text-lg text-[var(--gold)]">Broker logo</h2>
         <p className="mt-1 text-sm text-[var(--txt3)]">
-          Shown in the app header. Same storage as admin upload (GCS or local <code className="text-[var(--teal)]">/uploads</code>
-          ).
+          Stored in the database so it survives deploys (PNG/JPEG/WebP/GIF, max ~400KB). Re-upload after changing
+          hosts if an old path stopped working.
         </p>
-        {tenant.logoUrl && (
+        {legacyRelativeLogo && (
+          <p className="mt-3 rounded-md border border-[var(--amber)]/40 bg-[var(--amber)]/10 px-3 py-2 text-sm text-[var(--amber)]">
+            Previous logo used a server file path that is no longer available (common after moving to Railway).
+            Upload again to fix the header.
+          </p>
+        )}
+        {logoPreviewUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={tenant.logoUrl} alt="" className="mt-4 h-14 w-auto object-contain" />
+          <img src={logoPreviewUrl} alt="" className="mt-4 h-14 w-auto object-contain" />
         )}
         {canEdit ? (
           <form action={wrap(uploadLogo)} encType="multipart/form-data" className="mt-4 flex flex-wrap items-end gap-3">
@@ -137,10 +149,9 @@ export function SettingsForms({
       <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 lg:col-span-2">
         <h2 className="font-display text-lg text-[var(--gold)]">Google Drive · listing photos</h2>
         <p className="mt-2 max-w-3xl text-sm text-[var(--txt2)]">
-          Paste the <strong className="text-[var(--txt)]">folder ID</strong> of the shared Drive folder that contains
-          subfolders per listing (one folder per property). The ID is the long string in the folder URL after{" "}
-          <code className="text-[var(--teal)]">folders/</code>. The service account for this app must have access to
-          that folder.
+          Paste the <strong className="text-[var(--txt)]">folder ID</strong> of the Drive folder that contains listing
+          photo subfolders. Use the ID from the URL after <code className="text-[var(--teal)]">folders/</code>. Share
+          that folder with the Google account you use to sign in so Drive APIs can read it.
         </p>
         {disabledNote && <p className="mt-2 text-sm text-[var(--amber)]">{disabledNote}</p>}
         <form action={wrap(updateDrive)} className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end">

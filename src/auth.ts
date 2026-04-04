@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import { authConfig } from "@/auth.config";
+import { authConfig, userRoleFromAdapterUser } from "@/auth.config";
+import { refreshGoogleAccessToken } from "@/lib/google-oauth";
 import { prisma } from "@/lib/prisma";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -15,10 +16,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const dbUser = await prisma.user.findUnique({ where: { email } });
       return Boolean(dbUser?.isActive);
     },
-    async jwt({ token, user, ...rest }) {
-      if (user) {
+    async jwt({ token, user, account }) {
+      const acc = account as
+        | {
+            provider?: string;
+            access_token?: string | null;
+            refresh_token?: string | null;
+            expires_at?: number | null;
+          }
+        | undefined
+        | null;
+
+      if (acc?.provider === "google") {
+        token.googleAccessToken = acc.access_token ?? undefined;
+        token.googleRefreshToken = acc.refresh_token ?? undefined;
+        const expSec = acc.expires_at;
+        token.googleAccessTokenExpires =
+          typeof expSec === "number" ? expSec * 1000 : Date.now() + 3600 * 1000;
+        token.googleAccessError = undefined;
+      }
+
+      if (user?.id) {
         token.id = user.id as string;
-        token.role = (user as { role?: string }).role ?? "AGENT";
+        token.role = userRoleFromAdapterUser(user);
         token.tenantId = (user as { tenantId?: string | null }).tenantId ?? null;
         const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
         if (dbUser) {
@@ -27,6 +47,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.tenantId = dbUser.tenantId;
         }
       }
+
+      if (token.googleRefreshToken) {
+        const exp =
+          typeof token.googleAccessTokenExpires === "number"
+            ? token.googleAccessTokenExpires
+            : 0;
+        const hasAccess =
+          typeof token.googleAccessToken === "string" && token.googleAccessToken.length > 0;
+        const expiredOrSoon = !hasAccess || exp === 0 || Date.now() >= exp - 60_000;
+        if (expiredOrSoon) {
+          return refreshGoogleAccessToken(token);
+        }
+      }
+
       return token;
     },
     async session(params) {
