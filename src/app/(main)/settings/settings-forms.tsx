@@ -204,8 +204,9 @@ export function SettingsForms({
         <p className="mt-2 max-w-3xl text-sm text-[var(--txt2)]">
           Add public <strong className="text-[var(--txt)]">zillow.com</strong> profile or team URLs (broker page, agent
           page, etc.). <strong className="text-[var(--txt)]">Sync</strong> fetches HTML and tries to extract listing
-          links — Zillow changes pages often, so results vary. Respect Zillow&apos;s terms; this is a best-effort pilot
-          for teams without Drive/CRM hygiene.
+          links — Zillow changes pages often, so results vary. <strong className="text-[var(--txt)]">HTTP 403</strong>{" "}
+          from this app on Railway is common (Zillow blocks many datacenter IPs). Respect Zillow&apos;s terms; treat
+          this as experimental — Drive or manual URLs are more reliable.
         </p>
         {disabledNote && <p className="mt-2 text-sm text-[var(--amber)]">{disabledNote}</p>}
 

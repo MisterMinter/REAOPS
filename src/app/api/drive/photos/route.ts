@@ -10,13 +10,13 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Tenant required" }, { status: 403 });
   }
 
-  const accessToken =
-    (await getGoogleAccessTokenForUser(session.user.id)) ?? session.accessToken ?? null;
+  const accessToken = await getGoogleAccessTokenForUser(session.user.id);
   if (!accessToken) {
     return NextResponse.json(
       {
         error: "No Google Drive access",
-        hint: "Sign out and sign in again to grant Drive read access.",
+        hint:
+          "Sign out, sign in again with Google (same account that can open the folder). If this persists, remove the app under Google Account → Security → third-party access, then sign in once more so a refresh token is stored.",
         code: session.error ?? "NO_ACCESS_TOKEN",
       },
       { status: 401 }
@@ -44,6 +44,16 @@ export async function GET(req: Request) {
     return NextResponse.json({ files });
   } catch (e) {
     console.error("Drive listPhotosInFolder", e);
+    const msg = e instanceof Error ? e.message : "";
+    if (msg.includes("401") || msg.includes("invalid authentication")) {
+      return NextResponse.json(
+        {
+          error: "Google rejected the access token",
+          hint: "Sign out and sign in again; enable Google Drive API on your OAuth GCP project.",
+        },
+        { status: 401 }
+      );
+    }
     return NextResponse.json({ error: "Drive API request failed" }, { status: 502 });
   }
 }

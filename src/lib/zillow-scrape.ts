@@ -97,6 +97,11 @@ export async function fetchZillowProfileHtml(profileUrl: string): Promise<string
     cache: "no-store",
   });
 
+  if (res.status === 403 || res.status === 401) {
+    throw new Error(
+      "Zillow denied access (HTTP 403/401). Their edge often blocks cloud servers (e.g. Railway). Use Drive/HubSpot for listings, or add listings manually until a sanctioned feed exists."
+    );
+  }
   if (!res.ok) {
     throw new Error(`Zillow HTTP ${res.status}`);
   }

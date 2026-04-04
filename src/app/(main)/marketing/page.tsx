@@ -87,11 +87,18 @@ export default async function MarketingPage() {
       driveFolders = await listDriveListingFolders(driveToken, driveCfg.rootFolderId);
     } catch (e) {
       console.error("Drive listDriveListingFolders", e);
-      driveListError = "Could not load Drive folders. Try signing out and back in with Drive access.";
+      const msg = e instanceof Error ? e.message : "";
+      const authRejected =
+        msg.includes("401") ||
+        msg.includes("invalid authentication") ||
+        msg.includes("Invalid Credentials");
+      driveListError = authRejected
+        ? "Google rejected the Drive credentials (expired or revoked). Sign out of the app, sign in again with Google. If it keeps happening: Google Account → Security → Third-party access → remove this app → sign in once more (to capture a fresh refresh token), and confirm the Google Cloud project has the Drive API enabled."
+        : "Could not load Drive folders. Try signing out and back in with Google.";
     }
   } else if (driveCfg && !driveToken) {
     driveListError =
-      "No Google token for Drive. Sign out, sign in again with Google, and ensure Drive scope is granted.";
+      "No usable Google token for Drive (missing refresh token or refresh failed). Sign out, sign in again with the same Google account. First-time consent must include offline access so a refresh token is stored.";
   }
 
   const rows = buildMarketingListingRows(cached, driveFolders);
