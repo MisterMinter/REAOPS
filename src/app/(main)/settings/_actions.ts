@@ -3,6 +3,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { uploadTenantLogo } from "@/lib/storage";
+import { syncZillowProfileSource as runZillowSync } from "@/lib/zillow-sync";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -82,4 +83,69 @@ export async function uploadTenantLogoFromSettings(formData: FormData) {
   revalidatePath("/marketing");
   revalidatePath("/assistant");
   redirect("/settings?saved=logo");
+}
+
+export async function addZillowProfileSource(formData: FormData) {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+
+  const profileUrl = String(formData.get("profileUrl") ?? "").trim();
+  const displayLabel = String(formData.get("displayLabel") ?? "").trim() || null;
+  const assignRaw = String(formData.get("assignedUserId") ?? "").trim();
+  let assignedUserId: string | null = assignRaw.length > 0 ? assignRaw : null;
+
+  if (!profileUrl) redirect("/settings?error=zillow-url");
+
+  if (assignedUserId) {
+    const u = await prisma.user.findFirst({
+      where: { id: assignedUserId, tenantId: ctx.tenantId },
+    });
+    if (!u) assignedUserId = null;
+  }
+
+  await prisma.zillowProfileSource.create({
+    data: {
+      tenantId: ctx.tenantId,
+      profileUrl,
+      displayLabel,
+      assignedUserId,
+    },
+  });
+  revalidatePath("/settings");
+  revalidatePath("/marketing");
+  redirect("/settings?saved=zillow-add");
+}
+
+export async function removeZillowProfileSource(formData: FormData) {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) redirect("/settings?error=zillow-id");
+
+  await prisma.zillowProfileSource.deleteMany({
+    where: { id, tenantId: ctx.tenantId },
+  });
+  revalidatePath("/settings");
+  revalidatePath("/marketing");
+  redirect("/settings?saved=zillow-remove");
+}
+
+export async function syncZillowProfileSourceAction(formData: FormData) {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) redirect("/settings?error=zillow-id");
+
+  const { imported, error } = await runZillowSync(id);
+  revalidatePath("/settings");
+  revalidatePath("/marketing");
+
+  if (error) {
+    redirect(
+      `/settings?error=zillow-sync&imported=${imported}&detail=${encodeURIComponent(error)}`
+    );
+  }
+  redirect(`/settings?saved=zillow-sync&imported=${imported}`);
 }

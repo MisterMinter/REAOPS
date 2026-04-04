@@ -1,17 +1,35 @@
 import Link from "next/link";
 import { auth } from "@/auth";
+import { type DriveFolderRef, listDriveListingFolders } from "@/lib/drive";
+import { getGoogleAccessTokenForUser } from "@/lib/google-account-token";
 import { getOnboardingSnapshot } from "@/lib/onboarding";
+import { type MarketingListingSource, buildMarketingListingRows } from "@/lib/marketing-listings";
 import { prisma } from "@/lib/prisma";
+
+function sourceLabel(source: MarketingListingSource) {
+  const labels: Record<MarketingListingSource, string> = {
+    hubspot: "HubSpot",
+    drive: "Drive",
+    both: "HubSpot + Drive",
+    zillow: "Zillow",
+    zillow_drive: "Zillow + Drive",
+  };
+  return labels[source];
+}
 
 export default async function MarketingPage() {
   const session = await auth();
   const user = session?.user;
   const snap = user?.id
-    ? await getOnboardingSnapshot(prisma, {
-        id: user.id,
-        role: user.role,
-        tenantId: user.tenantId,
-      })
+    ? await getOnboardingSnapshot(
+        prisma,
+        {
+          id: user.id,
+          role: user.role,
+          tenantId: user.tenantId,
+        },
+        { googleTokenUserId: user.id }
+      )
     : null;
 
   if (!user?.tenantId) {
@@ -19,12 +37,15 @@ export default async function MarketingPage() {
       <div>
         <h1 className="font-display text-3xl text-[var(--txt)]">Listing Marketing Pack</h1>
         <p className="mt-2 max-w-2xl text-[var(--txt2)]">
-          Select listings, photos, and generate MLS descriptions, captions, and email lines — once your brokerage is
-          connected to HubSpot and Drive.
+          Select listings, photos, and generate MLS descriptions, captions, and email lines. Connect Google Drive for
+          photo folders; HubSpot is optional when you want CRM-backed fields.
         </p>
         <div className="mt-8 rounded-lg border border-[var(--amber)]/40 bg-[var(--amber)]/5 p-6">
           <p className="text-sm text-[var(--txt2)]">
-            You are not assigned to a brokerage yet. Open <Link href="/start" className="text-[var(--teal)] hover:underline">Start</Link>{" "}
+            You are not assigned to a brokerage yet. Open{" "}
+            <Link href="/start" className="text-[var(--teal)] hover:underline">
+              Start
+            </Link>{" "}
             for setup steps, or ask a platform admin to link your account to a tenant.
           </p>
           {user?.role === "ADMIN" && (
@@ -40,19 +61,57 @@ export default async function MarketingPage() {
     );
   }
 
+  const tenantId = user.tenantId;
+  const driveCfg = await prisma.driveConfig.findUnique({
+    where: { tenantId },
+    select: { rootFolderId: true },
+  });
+
+  const cached = await prisma.cachedListing.findMany({
+    where: { tenantId },
+    select: {
+      id: true,
+      hubspotId: true,
+      address: true,
+      shortAddress: true,
+      driveFolderId: true,
+    },
+  });
+
+  let driveFolders: DriveFolderRef[] = [];
+  let driveListError: string | null = null;
+  const driveToken =
+    (await getGoogleAccessTokenForUser(user.id)) ?? session?.accessToken ?? null;
+  if (driveCfg && driveToken) {
+    try {
+      driveFolders = await listDriveListingFolders(driveToken, driveCfg.rootFolderId);
+    } catch (e) {
+      console.error("Drive listDriveListingFolders", e);
+      driveListError = "Could not load Drive folders. Try signing out and back in with Drive access.";
+    }
+  } else if (driveCfg && !driveToken) {
+    driveListError =
+      "No Google token for Drive. Sign out, sign in again with Google, and ensure Drive scope is granted.";
+  }
+
+  const rows = buildMarketingListingRows(cached, driveFolders);
+
   return (
     <div>
       <h1 className="font-display text-3xl text-[var(--txt)]">Listing Marketing Pack</h1>
       <p className="mt-2 max-w-2xl text-[var(--txt2)]">
-        Pull listings from HubSpot, pick photos from Drive, generate copy with Claude — end-to-end wiring is in
-        progress.
+        Properties appear from <strong className="text-[var(--txt)]">subfolders</strong> under your Drive root (folder
+        name = street address; photos inside), and from <strong className="text-[var(--txt)]">HubSpot</strong> when
+        listings are synced. Same page for both — Drive supplies photos either way.
       </p>
 
       <div className="mt-8 grid gap-4 lg:grid-cols-3">
         <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
-          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Listings in app</div>
-          <div className="mt-2 font-display text-3xl text-[var(--gold)]">{snap?.listingCount ?? 0}</div>
-          <p className="mt-2 text-xs text-[var(--txt3)]">From HubSpot after sync is enabled</p>
+          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Properties</div>
+          <div className="mt-2 font-display text-3xl text-[var(--gold)]">{snap?.listingCount ?? rows.length}</div>
+          <p className="mt-2 text-xs text-[var(--txt3)]">
+            Drive subfolders + HubSpot rows (duplicates merged when a listing is linked to a folder)
+          </p>
         </div>
         <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">HubSpot</div>
@@ -60,7 +119,7 @@ export default async function MarketingPage() {
             {snap?.hubspotConnected ? (
               <span className="text-[var(--green)]">Connected</span>
             ) : (
-              <span className="text-[var(--txt3)]">Not connected</span>
+              <span className="text-[var(--txt3)]">Not connected (optional)</span>
             )}
           </div>
           <Link href="/settings" className="mt-2 inline-block text-xs text-[var(--teal)] hover:underline">
@@ -68,10 +127,10 @@ export default async function MarketingPage() {
           </Link>
         </div>
         <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
-          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Drive photos</div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Drive</div>
           <div className="mt-2 text-sm font-medium text-[var(--txt)]">
             {snap?.hasDriveFolder ? (
-              <span className="text-[var(--green)]">Folder ID saved</span>
+              <span className="text-[var(--green)]">Root folder saved</span>
             ) : (
               <span className="text-[var(--txt3)]">Add root folder</span>
             )}
@@ -82,17 +141,68 @@ export default async function MarketingPage() {
         </div>
       </div>
 
-      <div className="mt-10 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6">
-        <h2 className="font-medium text-[var(--txt)]">What happens next</h2>
+      {driveListError && (
+        <p className="mt-6 rounded-md border border-[var(--amber)]/40 bg-[var(--amber)]/10 px-4 py-3 text-sm text-[var(--amber)]">
+          {driveListError}
+        </p>
+      )}
+
+      <section className="mt-10 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6">
+        <h2 className="font-medium text-[var(--txt)]">Your properties</h2>
+        <p className="mt-2 text-sm text-[var(--txt3)]">
+          Photos for each row load from Drive via{" "}
+          <code className="text-[var(--teal)]">/api/drive/photos?folderId=…</code> (hero picker and generation wiring
+          next).
+        </p>
+        {rows.length === 0 ? (
+          <p className="mt-6 text-sm text-[var(--txt2)]">
+            No properties yet. Under{" "}
+            <Link href="/settings" className="text-[var(--teal)] hover:underline">
+              Settings → Google Drive
+            </Link>
+            , set the root folder that contains one subfolder per listing (named with the address). Or sync listings
+            from HubSpot when that integration is enabled.
+          </p>
+        ) : (
+          <div className="mt-6 overflow-x-auto">
+            <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
+              <thead>
+                <tr className="border-b border-[var(--border)] text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+                  <th className="py-3 pr-4 font-semibold">Address / folder</th>
+                  <th className="py-3 pr-4 font-semibold">Source</th>
+                  <th className="py-3 font-semibold">Drive folder ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.key} className="border-b border-[var(--border)]/80 text-[var(--txt2)]">
+                    <td className="py-3 pr-4 text-[var(--txt)]">{row.title}</td>
+                    <td className="py-3 pr-4">
+                      <span className="rounded-md border border-[var(--border2)] px-2 py-0.5 text-xs text-[var(--txt3)]">
+                        {sourceLabel(row.source)}
+                      </span>
+                    </td>
+                    <td className="py-3 font-mono text-xs text-[var(--teal)]">
+                      {row.driveFolderId ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <div className="mt-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+        <h2 className="font-medium text-[var(--txt)]">Next steps</h2>
         <ol className="mt-3 list-inside list-decimal space-y-2 text-sm text-[var(--txt2)]">
           <li>
             <Link href="/settings" className="text-[var(--teal)] hover:underline">
               Settings
             </Link>
-            : Drive folder + HubSpot OAuth (when live)
+            : Drive root folder ID + optional HubSpot
           </li>
-          <li>Listings sync into this workspace; you pick a property and hero photo</li>
-          <li>Generate MLS description, Instagram caption, email subjects, and card copy in one run</li>
+          <li>Pick a property and hero photo, then generate MLS copy, captions, and email lines (Claude integration)</li>
         </ol>
         <Link
           href="/start"

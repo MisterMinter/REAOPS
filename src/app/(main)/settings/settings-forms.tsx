@@ -31,6 +31,18 @@ type Props = {
   updateProfile: (formData: FormData) => Promise<void>;
   updateDrive: (formData: FormData) => Promise<void>;
   uploadLogo: (formData: FormData) => Promise<void>;
+  zillowSources: Array<{
+    id: string;
+    profileUrl: string;
+    displayLabel: string | null;
+    assignedUserId: string | null;
+    lastSyncedAt: Date | null;
+    lastSyncError: string | null;
+  }>;
+  tenantUsers: Array<{ id: string; name: string | null; email: string }>;
+  addZillowProfile: (formData: FormData) => Promise<void>;
+  removeZillowProfile: (formData: FormData) => Promise<void>;
+  syncZillowProfile: (formData: FormData) => Promise<void>;
 };
 
 export function SettingsForms({
@@ -49,6 +61,11 @@ export function SettingsForms({
   updateProfile,
   updateDrive,
   uploadLogo,
+  zillowSources,
+  tenantUsers,
+  addZillowProfile,
+  removeZillowProfile,
+  syncZillowProfile,
 }: Props) {
   const [pending, startTransition] = useTransition();
 
@@ -180,6 +197,125 @@ export function SettingsForms({
         <p className="mt-3 text-xs text-[var(--txt3)]">
           Clear the field and save to remove the stored folder ID.
         </p>
+      </section>
+
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 lg:col-span-2">
+        <h2 className="font-display text-lg text-[var(--gold)]">Zillow · listing import (experimental)</h2>
+        <p className="mt-2 max-w-3xl text-sm text-[var(--txt2)]">
+          Add public <strong className="text-[var(--txt)]">zillow.com</strong> profile or team URLs (broker page, agent
+          page, etc.). <strong className="text-[var(--txt)]">Sync</strong> fetches HTML and tries to extract listing
+          links — Zillow changes pages often, so results vary. Respect Zillow&apos;s terms; this is a best-effort pilot
+          for teams without Drive/CRM hygiene.
+        </p>
+        {disabledNote && <p className="mt-2 text-sm text-[var(--amber)]">{disabledNote}</p>}
+
+        {canEdit && (
+          <form action={addZillowProfile} className="mt-4 grid gap-4 border-t border-[var(--border)] pt-4 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Profile URL</label>
+              <input
+                name="profileUrl"
+                required
+                type="url"
+                placeholder="https://www.zillow.com/profile/YourName"
+                className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)]"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Label (optional)</label>
+              <input
+                name="displayLabel"
+                type="text"
+                placeholder="Jane · team page"
+                className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)]"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+                Assign to agent (optional)
+              </label>
+              <select
+                name="assignedUserId"
+                className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)]"
+                defaultValue=""
+              >
+                <option value="">— None —</option>
+                {tenantUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {(u.name ?? u.email).trim()} ({u.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <button
+                type="submit"
+                className="rounded-md bg-[var(--teal)]/20 px-4 py-2 text-sm font-semibold text-[var(--teal)]"
+              >
+                Add Zillow page
+              </button>
+            </div>
+          </form>
+        )}
+
+        <ul className="mt-6 space-y-4">
+          {zillowSources.length === 0 ? (
+            <li className="text-sm text-[var(--txt3)]">No Zillow pages yet.</li>
+          ) : (
+            zillowSources.map((z) => (
+              <li
+                key={z.id}
+                className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--txt2)]"
+              >
+                <div className="font-medium text-[var(--txt)]">{z.displayLabel ?? "Zillow page"}</div>
+                <a
+                  href={z.profileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 block break-all text-xs text-[var(--teal)] hover:underline"
+                >
+                  {z.profileUrl}
+                </a>
+                {z.assignedUserId && (
+                  <p className="mt-1 text-xs text-[var(--txt3)]">
+                    Assigned:{" "}
+                    {tenantUsers.find((u) => u.id === z.assignedUserId)?.email ?? z.assignedUserId}
+                  </p>
+                )}
+                <p className="mt-2 text-xs text-[var(--txt3)]">
+                  {z.lastSyncedAt
+                    ? `Last sync: ${z.lastSyncedAt.toLocaleString()}`
+                    : "Never synced"}
+                  {z.lastSyncError && (
+                    <span className="mt-1 block text-[var(--coral)]">Error: {z.lastSyncError}</span>
+                  )}
+                </p>
+                {canEdit && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <form action={syncZillowProfile}>
+                      <input type="hidden" name="id" value={z.id} />
+                      <button
+                        type="submit"
+                        className="rounded-md border border-[var(--border2)] px-3 py-1.5 text-xs text-[var(--txt)]"
+                      >
+                        Sync listings
+                      </button>
+                    </form>
+                    <form action={removeZillowProfile}>
+                      <input type="hidden" name="id" value={z.id} />
+                      <button
+                        type="submit"
+                        className="rounded-md border border-[var(--coral)]/50 px-3 py-1.5 text-xs text-[var(--coral)]"
+                      >
+                        Remove
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </li>
+            ))
+          )}
+        </ul>
       </section>
 
       <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 lg:col-span-2">

@@ -1,5 +1,7 @@
-import type { UserRole } from "@prisma/client";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient, UserRole } from "@prisma/client";
+import { listDriveListingFolders } from "@/lib/drive";
+import { getGoogleAccessTokenForUser } from "@/lib/google-account-token";
+import { mergedListingCount } from "@/lib/marketing-listings";
 
 export type OnboardingSnapshot = {
   role: UserRole;
@@ -24,9 +26,17 @@ const ROLE_LABELS: Record<UserRole, string> = {
   AGENT: "Agent",
 };
 
+export type OnboardingOptions = {
+  /** @deprecated Prefer googleTokenUserId — JWT may omit accessToken in production. */
+  googleAccessToken?: string;
+  /** Load Google token from Account + refresh (reliable for Drive API). */
+  googleTokenUserId?: string;
+};
+
 export async function getOnboardingSnapshot(
   prisma: PrismaClient,
-  input: { id: string; role: UserRole; tenantId: string | null }
+  input: { id: string; role: UserRole; tenantId: string | null },
+  options?: OnboardingOptions
 ): Promise<OnboardingSnapshot> {
   const [tenantCount, userCount] = await Promise.all([
     prisma.tenant.count(),
@@ -50,8 +60,9 @@ export async function getOnboardingSnapshot(
         logoUrl: true,
         hubspotTokens: { select: { id: true } },
         bufferTokens: { select: { id: true } },
-        driveConfig: { select: { id: true } },
-        _count: { select: { cachedListings: true, cachedContacts: true } },
+        driveConfig: { select: { id: true, rootFolderId: true } },
+        cachedListings: { select: { driveFolderId: true } },
+        _count: { select: { cachedContacts: true } },
       },
     });
     if (t) {
@@ -60,8 +71,24 @@ export async function getOnboardingSnapshot(
       hasDriveFolder = Boolean(t.driveConfig);
       hubspotConnected = Boolean(t.hubspotTokens);
       bufferConnected = Boolean(t.bufferTokens);
-      listingCount = t._count.cachedListings;
       contactCount = t._count.cachedContacts;
+
+      let driveFolders: { id: string }[] | null = null;
+      let driveToken: string | null = null;
+      if (options?.googleTokenUserId) {
+        driveToken = await getGoogleAccessTokenForUser(options.googleTokenUserId);
+      }
+      if (!driveToken && options?.googleAccessToken) {
+        driveToken = options.googleAccessToken;
+      }
+      if (t.driveConfig && driveToken) {
+        try {
+          driveFolders = await listDriveListingFolders(driveToken, t.driveConfig.rootFolderId);
+        } catch {
+          driveFolders = null;
+        }
+      }
+      listingCount = mergedListingCount(t.cachedListings, driveFolders);
     }
   }
 

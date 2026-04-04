@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { auth } from "@/auth";
+import { AssistantComposer } from "@/components/assistant/AssistantComposer";
 import { getOnboardingSnapshot } from "@/lib/onboarding";
 import { prisma } from "@/lib/prisma";
 
@@ -7,11 +8,15 @@ export default async function AssistantPage() {
   const session = await auth();
   const user = session?.user;
   const snap = user?.id
-    ? await getOnboardingSnapshot(prisma, {
-        id: user.id,
-        role: user.role,
-        tenantId: user.tenantId,
-      })
+    ? await getOnboardingSnapshot(
+        prisma,
+        {
+          id: user.id,
+          role: user.role,
+          tenantId: user.tenantId,
+        },
+        { googleTokenUserId: user.id }
+      )
     : null;
 
   if (!user?.tenantId) {
@@ -39,8 +44,8 @@ export default async function AssistantPage() {
     <div>
       <h1 className="font-display text-3xl text-[var(--txt)]">Broker Assistant</h1>
       <p className="mt-2 max-w-2xl text-[var(--txt2)]">
-        Chat UI with streaming replies and saved sessions is shipping next. Below is what the assistant will use once
-        data is synced.
+        Streaming chat below uses your server-side API keys (Gemini preferred, or Anthropic / OpenAI). Listing and CRM
+        context will plug in as sync ships.
       </p>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -68,19 +73,7 @@ export default async function AssistantPage() {
         </div>
       </div>
 
-      <div className="mt-10 rounded-lg border border-dashed border-[var(--border2)] bg-[var(--surface)]/50 p-8 text-center">
-        <p className="text-sm text-[var(--txt3)]">
-          Chat composer and suggestions will appear here. Until then, use{" "}
-          <Link href="/start" className="text-[var(--teal)] hover:underline">
-            Start
-          </Link>{" "}
-          to track setup and{" "}
-          <Link href="/settings" className="text-[var(--teal)] hover:underline">
-            Settings
-          </Link>{" "}
-          for integrations.
-        </p>
-      </div>
+      <AssistantComposer />
     </div>
   );
 }

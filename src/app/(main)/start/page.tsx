@@ -44,11 +44,15 @@ export default async function StartPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const snap = await getOnboardingSnapshot(prisma, {
-    id: session.user.id,
-    role: session.user.role,
-    tenantId: session.user.tenantId,
-  });
+  const snap = await getOnboardingSnapshot(
+    prisma,
+    {
+      id: session.user.id,
+      role: session.user.role,
+      tenantId: session.user.tenantId,
+    },
+    { googleTokenUserId: session.user.id }
+  );
 
   return (
     <div className="space-y-10">
@@ -108,7 +112,8 @@ export default async function StartPage() {
         <section>
           <h2 className="font-display text-xl text-[var(--gold)]">Your brokerage workspace</h2>
           <p className="mt-2 max-w-2xl text-sm text-[var(--txt2)]">
-            Finish these so marketing and assistant are useful once HubSpot sync is connected.
+            Finish these so marketing and assistant are useful. Listings can come from Google Drive folders and/or
+            HubSpot once sync is on.
           </p>
           <ul className="mt-6 space-y-3">
             <Step
@@ -134,11 +139,11 @@ export default async function StartPage() {
             />
             <Step
               done={snap.listingCount > 0}
-              title="Sync listings"
+              title="Listings available for marketing"
               detail={
                 snap.listingCount > 0
-                  ? `${snap.listingCount} listing(s) cached. Contacts: ${snap.contactCount}.`
-                  : "After HubSpot connects, listings appear in Marketing automatically."
+                  ? `${snap.listingCount} propert(ies) in Marketing (Drive folders and/or HubSpot). Contacts: ${snap.contactCount}.`
+                  : "Add subfolders under your Drive root (one per address), or connect HubSpot when sync is available."
               }
               href="/marketing"
               hrefLabel="Marketing →"

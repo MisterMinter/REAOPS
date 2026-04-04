@@ -67,13 +67,31 @@ model Tenant {
   defaultTone          String @default("Warm but professional. First-name basis. No pressure.")
   complianceStandard   String @default("ga_residential")
 
-  users          User[]
-  activityLogs   ActivityLog[]
-  cachedListings CachedListing[]
-  cachedContacts CachedContact[]
+  users                 User[]
+  activityLogs          ActivityLog[]
+  cachedListings        CachedListing[]
+  cachedContacts        CachedContact[]
+  zillowProfileSources  ZillowProfileSource[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Broker/agent Zillow profile or team URLs to import active listing zpids (best-effort HTML parse).
+model ZillowProfileSource {
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  profileUrl     String    @db.Text
+  displayLabel   String?
+  assignedUserId String?
+  assignedUser   User?     @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  lastSyncedAt   DateTime?
+  lastSyncError  String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([tenantId])
 }
 
 model HubSpotTokens {
@@ -135,8 +153,9 @@ model User {
 
   accounts      Account[]
   sessions      Session[]
-  activityLogs  ActivityLog[]
-  chatSessions  ChatSession[]
+  activityLogs           ActivityLog[]
+  chatSessions           ChatSession[]
+  zillowProfileSources   ZillowProfileSource[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -2,6 +2,9 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  addZillowProfileSource,
+  removeZillowProfileSource,
+  syncZillowProfileSourceAction,
   updateDriveRootFolder,
   updateTenantProfile,
   uploadTenantLogoFromSettings,
@@ -12,7 +15,12 @@ import { hasLegacyRelativeLogoPath, resolveTenantLogoForDisplay } from "@/lib/te
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; saved?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    saved?: string;
+    imported?: string;
+    detail?: string;
+  }>;
 }) {
   const q = await searchParams;
   const session = await auth();
@@ -33,9 +41,18 @@ export default async function SettingsPage({
           hubspotTokens: { select: { id: true, hubId: true, updatedAt: true } },
           bufferTokens: { select: { id: true, updatedAt: true } },
           driveConfig: { select: { rootFolderId: true, updatedAt: true } },
+          zillowProfileSources: { orderBy: { createdAt: "asc" } },
         },
       })
     : null;
+
+  const tenantUsers = user.tenantId
+    ? await prisma.user.findMany({
+        where: { tenantId: user.tenantId },
+        select: { id: true, name: true, email: true },
+        orderBy: { email: "asc" },
+      })
+    : [];
 
   return (
     <div className="space-y-10">
@@ -90,6 +107,37 @@ export default async function SettingsPage({
           Choose an image file before uploading.
         </p>
       )}
+      {q.saved === "zillow-add" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          Zillow page added. Use <strong className="text-[var(--txt)]">Sync listings</strong> to import.
+        </p>
+      )}
+      {q.saved === "zillow-remove" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          Zillow page removed.
+        </p>
+      )}
+      {q.saved === "zillow-sync" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          Zillow sync finished. Imported {q.imported ?? "0"} listing link(s). Check Marketing.
+        </p>
+      )}
+      {q.error === "zillow-url" && (
+        <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
+          Enter a valid Zillow profile URL.
+        </p>
+      )}
+      {q.error === "zillow-id" && (
+        <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
+          Missing Zillow source id.
+        </p>
+      )}
+      {q.error === "zillow-sync" && (
+        <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
+          Zillow sync failed{q.detail ? `: ${decodeURIComponent(q.detail)}` : ""}. Imported {q.imported ?? "0"} before
+          error.
+        </p>
+      )}
 
       {tenant && (
         <SettingsForms
@@ -116,6 +164,11 @@ export default async function SettingsPage({
           updateProfile={updateTenantProfile}
           updateDrive={updateDriveRootFolder}
           uploadLogo={uploadTenantLogoFromSettings}
+          zillowSources={tenant.zillowProfileSources}
+          tenantUsers={tenantUsers}
+          addZillowProfile={addZillowProfileSource}
+          removeZillowProfile={removeZillowProfileSource}
+          syncZillowProfile={syncZillowProfileSourceAction}
         />
       )}
 
