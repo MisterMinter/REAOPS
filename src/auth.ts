@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
+import { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -20,11 +21,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
   },
   callbacks: {
-    async signIn({ user, profile }) {
-      const email = user.email ?? (profile?.email as string | undefined);
-      if (!email || typeof email !== "string") return false;
-      const dbUser = await prisma.user.findUnique({ where: { email } });
-      if (!dbUser?.isActive) return false;
+    async signIn() {
+      // TEMPORARY: Allow all Google sign-ins until first admin is created.
+      // Re-enable whitelist: require existing User row + isActive before return true.
+      // TODO: Re-enable user whitelist check after initial setup.
       return true;
     },
     async session({ session, user }) {
@@ -38,6 +38,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
   events: {
+    async createUser({ user }) {
+      if (!user.id) return;
+      const userCount = await prisma.user.count();
+      if (userCount <= 1) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { role: UserRole.ADMIN },
+        });
+      }
+    },
     async signIn({ user }) {
       if (!user.id) return;
       await prisma.user.update({
