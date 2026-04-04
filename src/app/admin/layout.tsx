@@ -7,7 +7,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="relative z-10 min-h-screen">
       <header className="border-b border-[var(--border)] bg-[var(--surface)] px-4 py-3 sm:px-6">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4">
-          <Link href="/marketing" className="text-sm text-[var(--txt3)] hover:text-[var(--gold)]">
+          <Link href="/start" className="text-sm text-[var(--txt3)] hover:text-[var(--gold)]">
             ← App
           </Link>
           <span className="text-xs font-semibold uppercase tracking-widest text-[var(--gold)]">Admin</span>

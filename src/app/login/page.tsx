@@ -11,7 +11,7 @@ export default async function LoginPage({
   const session = await auth();
   const params = await searchParams;
   if (session?.user) {
-    redirect(params.callbackUrl && params.callbackUrl.startsWith("/") ? params.callbackUrl : "/marketing");
+    redirect(params.callbackUrl && params.callbackUrl.startsWith("/") ? params.callbackUrl : "/start");
   }
 
   if (!process.env.GOOGLE_CLIENT_ID) {

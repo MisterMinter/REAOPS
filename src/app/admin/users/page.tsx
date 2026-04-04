@@ -43,7 +43,25 @@ export default async function AdminUsersPage({
       )}
       <ul className="mt-8 divide-y divide-[var(--border)] rounded-lg border border-[var(--border)] bg-[var(--card)]">
         {users.length === 0 && (
-          <li className="px-4 py-8 text-center text-[var(--txt3)]">No users yet. Seed the first admin or add one.</li>
+          <li className="px-4 py-10 text-center">
+            <p className="text-[var(--txt2)]">
+              No people yet. Run <code className="text-[var(--teal)]">npm run db:seed</code> for a dev admin, or invite
+              the first broker below.
+            </p>
+            <Link
+              href="/admin/users/new"
+              className="mt-4 inline-block rounded-md bg-[var(--gold)] px-4 py-2 text-sm font-semibold text-[var(--bg)]"
+            >
+              Invite first user
+            </Link>
+            <p className="mt-6 text-xs text-[var(--txt3)]">
+              Email must match their Google account. Create a{" "}
+              <Link href="/admin/tenants/new" className="text-[var(--teal)] hover:underline">
+                tenant
+              </Link>{" "}
+              first if they are a broker owner or agent.
+            </p>
+          </li>
         )}
         {users.map((u) => (
           <li key={u.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">

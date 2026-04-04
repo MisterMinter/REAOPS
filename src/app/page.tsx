@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 
 export default async function HomePage() {
   const session = await auth();
-  if (session?.user) redirect("/marketing");
+  if (session?.user) redirect("/start");
 
   return (
     <div className="relative z-10 mx-auto flex min-h-screen max-w-lg flex-col justify-center px-6 py-20">

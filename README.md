@@ -17,6 +17,8 @@ npm run dev
 
 3. **Google sign-in** only works for emails that already exist in the `User` table. The seed creates the first platform admin (`feroz@automatedengineering.io`). Add other users under **Admin → Users** before they sign in.
 
+4. After login, open **Start** (`/start`) for a role-based checklist (platform admin vs brokerage workspace).
+
 ## Production (Railway)
 
 - Provision **PostgreSQL** and set `DATABASE_URL` on the web service.
