@@ -1,0 +1,223 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── NextAuth (Auth.js) ───────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Multi-tenancy ───────────────────────────────────────────
+
+model Tenant {
+  id            String  @id @default(cuid())
+  name          String
+  slug          String  @unique
+  logoUrl       String?
+  brokerageName String?
+  isActive      Boolean @default(true)
+
+  hubspotTokens HubSpotTokens?
+  bufferTokens  BufferTokens?
+  driveConfig   DriveConfig?
+
+  hubspotListingObject String @default("deals")
+  hubspotListingProps  Json?
+
+  defaultTone          String @default("Warm but professional. First-name basis. No pressure.")
+  complianceStandard   String @default("ga_residential")
+
+  users          User[]
+  activityLogs   ActivityLog[]
+  cachedListings CachedListing[]
+  cachedContacts CachedContact[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model HubSpotTokens {
+  id          String   @id @default(cuid())
+  tenantId    String   @unique
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accessToken String   @db.Text
+  refreshToken String  @db.Text
+  expiresAt   DateTime
+  hubId       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model BufferTokens {
+  id           String    @id @default(cuid())
+  tenantId     String    @unique
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accessToken  String    @db.Text
+  refreshToken String?   @db.Text
+  expiresAt    DateTime?
+  profileIds   Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model DriveConfig {
+  id            String   @id @default(cuid())
+  tenantId      String   @unique
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rootFolderId  String
+  folderMapping Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ─── Users & Roles ───────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  BROKER_OWNER
+  AGENT
+}
+
+model User {
+  id       String    @id @default(cuid())
+  email    String    @unique
+  name     String?
+  image    String?
+  emailVerified DateTime?
+
+  role   UserRole @default(AGENT)
+  tenantId String?
+  tenant   Tenant?  @relation(fields: [tenantId], references: [id])
+
+  assignedListings Json?
+  lastLoginAt      DateTime?
+  isActive         Boolean   @default(true)
+
+  accounts      Account[]
+  sessions      Session[]
+  activityLogs  ActivityLog[]
+  chatSessions  ChatSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+model CachedListing {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  hubspotId     String
+  address       String
+  shortAddress  String
+  city          String
+  state         String
+  zip           String?
+  beds          Int?
+  baths         Float?
+  sqft          Int?
+  price         Int?
+  priceDisplay  String
+  status        String
+  daysOnMarket  Int?
+  features      String?
+  notes         String?
+  mlsNumber     String?
+  driveFolderId String?
+  rawData       Json
+  lastSyncedAt  DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, hubspotId])
+  @@index([tenantId])
+}
+
+model CachedContact {
+  id              String    @id @default(cuid())
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  hubspotId       String
+  firstName       String?
+  lastName        String?
+  email           String?
+  phone           String?
+  leadStatus      String?
+  lastContactDate DateTime?
+  associatedDeals Json?
+  notes           String?
+  rawData         Json
+  lastSyncedAt    DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, hubspotId])
+  @@index([tenantId])
+}
+
+model ChatSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+}

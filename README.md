@@ -1,66 +1,37 @@
-# RE Agent Demo
+# RE Agent OS
 
-A real estate agent demo application with AI-powered features.
+Next.js app for listing marketing and broker assistant workflows (see `RE_AGENT_OS_PRD_1.md` for product scope).
 
-## Setup for Netlify Deployment
+## Local development
 
-This application uses a secure proxy to handle Anthropic API calls. The API key is stored as a Netlify environment variable and never exposed to the client.
+1. Copy `.env.example` to `.env` and fill values (at minimum `DATABASE_URL`, `AUTH_SECRET`, `NEXTAUTH_URL`, Google OAuth, and `TOKEN_ENCRYPTION_KEY` for future token storage).
 
-### Steps to Deploy:
+2. Install and migrate:
 
-1. **Set the Environment Variable in Netlify:**
-   - Go to your Netlify site dashboard
-   - Navigate to **Site settings** → **Environment variables**
-   - Click **Add variable**
-   - Name: `ANTHROPIC_API_KEY`
-   - Value: Your Anthropic API key (starts with `sk-ant-`)
-   - Click **Save**
-
-2. **Deploy the Site:**
-   - Push your code to your connected Git repository, or
-   - Deploy via Netlify CLI: `netlify deploy --prod`
-
-3. **Verify the Deployment:**
-   - The API key input field in the UI is optional on Netlify
-   - The app will automatically use the server-side API key
-   - No manual API key entry is required for users
-
-### Local Development
-
-For local development, you can either:
-
-**Option 1: Use Netlify Dev (Recommended)**
 ```bash
-# Install Netlify CLI if you haven't already
-npm install -g netlify-cli
-
-# Set the environment variable locally
-export ANTHROPIC_API_KEY=your-key-here
-
-# Run Netlify Dev
-netlify dev
+npm install
+npx prisma migrate deploy
+npm run db:seed
+npm run dev
 ```
 
-**Option 2: Use Direct API (Fallback)**
-- Enter your API key in the UI input field
-- The app will detect you're on localhost and use the direct API
+3. **Google sign-in** only works for emails that already exist in the `User` table. The seed creates the first platform admin (`feroz@automatedengineering.io`). Add other users under **Admin → Users** before they sign in.
 
-### Project Structure
+## Production (Railway)
 
-```
-.
-├── index.html                 # Main application file
-├── netlify/
-│   └── edge-functions/
-│       └── anthropic-proxy.ts # Edge function that proxies API calls
-├── netlify.toml              # Netlify configuration
-└── README.md                 # This file
-```
+- Provision **PostgreSQL** and set `DATABASE_URL` on the web service.
+- Set `NEXTAUTH_URL` to `https://reaops.com` (or your Railway URL before the custom domain is attached).
+- In **Google Cloud Console** (same project as Drive / GCS): OAuth client **Authorized redirect URI**  
+  `https://reaops.com/api/auth/callback/google` (and the Railway URL during staging).
+- **Build:** `npm run build` (default Nixpacks is fine).
+- **Start:** `npm run start`.
+- **Release / one-off:** after the first deploy, run `npx prisma migrate deploy` and `npm run db:seed` against production (Railway shell or a release phase), then remove seed from routine deploys if you prefer.
 
-### How It Works
+### Tenant logos
 
-- **On Netlify:** The app calls `/api/anthropic` which is handled by the Edge Function
-- **Edge Function:** Adds the API key from environment variables and forwards requests to Anthropic
-- **On Localhost:** The app can use either the proxy (via Netlify Dev) or direct API calls with a manually entered key
+- **Recommended:** GCS bucket + `GCS_BUCKET_LOGOS`, `GCS_PUBLIC_BASE_URL` (optional), `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`.
+- **Local:** files go to `public/uploads/tenants/{id}/` (gitignored).
 
-The API key is never exposed to the client-side code when deployed on Netlify.
+## Legacy static demo
+
+The previous Netlify single-page demo (`index.html`, `netlify/`) has been removed in favor of this app.

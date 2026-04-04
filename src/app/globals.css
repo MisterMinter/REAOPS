@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0d0f12;
+  --surface: #141720;
+  --card: #1a1e28;
+  --border: #252a38;
+  --border2: #2e3548;
+  --gold: #c9a84c;
+  --gold-dim: #7a6230;
+  --teal: #2dd4bf;
+  --teal-dim: #0f766e;
+  --coral: #f87171;
+  --coral-dim: #991b1b;
+  --txt: #e8eaf0;
+  --txt2: #8890a8;
+  --txt3: #545c78;
+  --green: #4ade80;
+  --amber: #fbbf24;
+}
+
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--font-outfit), system-ui, sans-serif;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.22;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.font-display {
+  font-family: var(--font-cormorant), ui-serif, Georgia, serif;
+}
