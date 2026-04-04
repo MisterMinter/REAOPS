@@ -1,44 +1,40 @@
 import NextAuth from "next-auth";
-import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { UserRole } from "@prisma/client";
+import { authConfig } from "@/auth.config";
 import { prisma } from "@/lib/prisma";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  trustHost: true,
+  ...authConfig,
   adapter: PrismaAdapter(prisma),
-  providers: [
-    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
-      ? [
-          Google({
-            clientId: process.env.GOOGLE_CLIENT_ID,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-            // TEMPORARY: Link Google to an existing User row with the same email (e.g. seed
-            // without Account row). Without this, Auth.js throws OAuthAccountNotLinked.
-            // TODO: Turn off after accounts are linked; Google verifies email.
-            allowDangerousEmailAccountLinking: true,
-          }),
-        ]
-      : []),
-  ],
-  pages: {
-    signIn: "/login",
-  },
   callbacks: {
-    async signIn() {
-      // TEMPORARY: Allow all Google sign-ins until first admin is created.
-      // Re-enable whitelist: require existing User row + isActive before return true.
-      // TODO: Re-enable user whitelist check after initial setup.
-      return true;
-    },
-    async session({ session, user }) {
-      const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
-      if (session.user && dbUser) {
-        session.user.id = dbUser.id;
-        session.user.role = dbUser.role;
-        session.user.tenantId = dbUser.tenantId;
+    ...authConfig.callbacks,
+    async jwt({ token, user, ...rest }) {
+      if (user) {
+        token.id = user.id as string;
+        token.role = (user as { role?: string }).role ?? "AGENT";
+        token.tenantId = (user as { tenantId?: string | null }).tenantId ?? null;
+        const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+        if (dbUser) {
+          token.id = dbUser.id;
+          token.role = dbUser.role;
+          token.tenantId = dbUser.tenantId;
+        }
       }
-      return session;
+      return token;
+    },
+    async session(params) {
+      const base = await authConfig.callbacks.session!(params);
+      const id = base.user?.id;
+      if (base.user && id) {
+        const dbUser = await prisma.user.findUnique({ where: { id } });
+        if (dbUser) {
+          base.user.id = dbUser.id;
+          base.user.role = dbUser.role;
+          base.user.tenantId = dbUser.tenantId;
+        }
+      }
+      return base;
     },
   },
   events: {
