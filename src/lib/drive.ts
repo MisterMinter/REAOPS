@@ -1,4 +1,4 @@
-import { google } from "googleapis";
+import { google, type drive_v3 } from "googleapis";
 
 export function getDriveClient(accessToken: string) {
   const auth = new google.auth.OAuth2();
@@ -11,7 +11,8 @@ const driveListOpts = {
   includeItemsFromAllDrives: true,
 } as const;
 
-export async function listPhotosInFolder(accessToken: string, folderId: string) {
+/** List images that are direct children of a folder (no recursion). */
+export async function listDirectPhotos(accessToken: string, folderId: string) {
   const drive = getDriveClient(accessToken);
   const res = await drive.files.list({
     q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
@@ -20,6 +21,24 @@ export async function listPhotosInFolder(accessToken: string, folderId: string) 
     ...driveListOpts,
   });
   return res.data.files ?? [];
+}
+
+/**
+ * List photos in a folder. If no direct image children exist, recurse up to
+ * MAX_PHOTO_DEPTH levels into subfolders (handles MARKETING/PICTURES layouts).
+ */
+const MAX_PHOTO_DEPTH = 3;
+
+export async function listPhotosInFolder(accessToken: string, folderId: string, depth = 0): Promise<drive_v3.Schema$File[]> {
+  const photos = await listDirectPhotos(accessToken, folderId);
+  if (photos.length > 0 || depth >= MAX_PHOTO_DEPTH) return photos;
+
+  const subs = await listSubfolders(accessToken, folderId);
+  for (const sub of subs.slice(0, 10)) {
+    const nested = await listPhotosInFolder(accessToken, sub.id, depth + 1);
+    if (nested.length > 0) return nested;
+  }
+  return [];
 }
 
 export type DriveFolderRef = { id: string; name: string | null | undefined };
@@ -52,7 +71,7 @@ export async function listDriveListingFolders(
 
   for (const folder of level1) {
     const [photos, sub] = await Promise.all([
-      listPhotosInFolder(accessToken, folder.id),
+      listDirectPhotos(accessToken, folder.id),
       listSubfolders(accessToken, folder.id),
     ]);
 
@@ -60,11 +79,9 @@ export async function listDriveListingFolders(
       result.push(folder);
     } else if (sub.length > 0) {
       for (const s of sub.slice(0, MAX_SUBFOLDERS)) {
-        const parentName = folder.name?.trim() ?? "";
         const childName = s.name?.trim() ?? "";
-        const combined =
-          parentName && childName ? `${parentName} / ${childName}` : parentName || childName || s.id;
-        result.push({ id: s.id, name: combined });
+        // Use child name alone — parent is just a category (e.g. COMMERCIAL, RESIDENTIAL)
+        result.push({ id: s.id, name: childName || s.id });
       }
     } else {
       result.push(folder);
