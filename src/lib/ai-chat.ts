@@ -69,7 +69,7 @@ async function* streamAnthropic(messages: ChatMessage[], system: string): AsyncG
   if (!key) throw new Error("ANTHROPIC_API_KEY missing");
 
   const anthropic = new Anthropic({ apiKey: key });
-  const model = process.env.ANTHROPIC_MODEL ?? "claude-3-5-sonnet-20241022";
+  const model = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
 
   const msgs = messages
     .filter((m) => m.role !== "system")
