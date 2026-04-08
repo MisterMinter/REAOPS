@@ -26,15 +26,28 @@ export async function listDirectPhotos(accessToken: string, folderId: string) {
 /**
  * List photos in a folder. If no direct image children exist, recurse up to
  * MAX_PHOTO_DEPTH levels into subfolders (handles MARKETING/PICTURES layouts).
+ * Prioritizes folders named for web/MLS photos over print/floorplan folders.
  */
 const MAX_PHOTO_DEPTH = 3;
+
+/** Folders likely to contain listing photos, checked first (case-insensitive). */
+const PREFERRED_FOLDER_NAMES = ["for web/mls", "for web", "web", "pictures", "images", "photos", "mls"];
+const DEPRIORITIZED_FOLDER_NAMES = ["floorplan", "floorplans", "floor plan", "floor plans", "for print", "print", "video", "videos"];
+
+function folderPriority(name: string | null | undefined): number {
+  const lower = (name ?? "").toLowerCase().trim();
+  if (PREFERRED_FOLDER_NAMES.includes(lower)) return 0;
+  if (DEPRIORITIZED_FOLDER_NAMES.includes(lower)) return 2;
+  return 1;
+}
 
 export async function listPhotosInFolder(accessToken: string, folderId: string, depth = 0): Promise<drive_v3.Schema$File[]> {
   const photos = await listDirectPhotos(accessToken, folderId);
   if (photos.length > 0 || depth >= MAX_PHOTO_DEPTH) return photos;
 
   const subs = await listSubfolders(accessToken, folderId);
-  for (const sub of subs.slice(0, 10)) {
+  const sorted = [...subs].sort((a, b) => folderPriority(a.name) - folderPriority(b.name));
+  for (const sub of sorted.slice(0, 10)) {
     const nested = await listPhotosInFolder(accessToken, sub.id, depth + 1);
     if (nested.length > 0) return nested;
   }
