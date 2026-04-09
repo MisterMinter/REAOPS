@@ -21,6 +21,8 @@ export type AgentInput = {
   messages: CoreMessage[];
   provider?: string;
   chatSessionId?: string;
+  channel?: string;
+  externalChatId?: string;
 };
 
 export type AgentResult = {
@@ -87,7 +89,9 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
       const sessionId = await persistConversation(
         input.userId,
         input.chatSessionId,
-        allMessages
+        allMessages,
+        input.channel,
+        input.externalChatId
       );
 
       return {
@@ -121,23 +125,32 @@ async function getAccessToken(userId: string): Promise<string | null> {
 async function persistConversation(
   userId: string,
   existingId: string | undefined,
-  messages: CoreMessage[]
+  messages: CoreMessage[],
+  channel?: string,
+  externalChatId?: string
 ): Promise<string> {
-  const serializable = messages.map((m) => ({
-    role: m.role,
-    content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-  }));
+  const serializable = messages.map((m) => {
+    if (typeof m.content === "string") {
+      return { role: m.role, content: m.content };
+    }
+    return { role: m.role, content: m.content };
+  });
 
   if (existingId) {
     await prisma.chatSession.update({
       where: { id: existingId },
-      data: { messages: serializable },
+      data: { messages: serializable as unknown as import("@prisma/client").Prisma.InputJsonValue },
     });
     return existingId;
   }
 
   const session = await prisma.chatSession.create({
-    data: { userId, messages: serializable },
+    data: {
+      userId,
+      channel: channel ?? "web",
+      externalChatId: externalChatId ?? null,
+      messages: serializable as unknown as import("@prisma/client").Prisma.InputJsonValue,
+    },
   });
   return session.id;
 }

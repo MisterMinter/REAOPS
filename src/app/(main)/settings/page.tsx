@@ -6,6 +6,7 @@ import {
   removeZillowProfileSource,
   syncZillowProfileSourceAction,
   updateDriveRootFolder,
+  updateTelegramId,
   updateTenantProfile,
   uploadTenantLogoFromSettings,
 } from "@/app/(main)/settings/_actions";
@@ -29,6 +30,11 @@ export default async function SettingsPage({
   if (!user) {
     return null;
   }
+
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { telegramId: true },
+  });
 
   const noTenant = !user.tenantId;
   const canEdit = user.role === "BROKER_OWNER" || user.role === "ADMIN";
@@ -141,6 +147,8 @@ export default async function SettingsPage({
 
       {tenant && (
         <SettingsForms
+          telegramId={dbUser?.telegramId ?? null}
+          updateTelegramId={updateTelegramId}
           tenant={{
             id: tenant.id,
             name: tenant.name,

@@ -14,10 +14,10 @@ type TenantProps = {
 };
 
 type Props = {
+  telegramId: string | null;
+  updateTelegramId: (formData: FormData) => Promise<void>;
   tenant: TenantProps;
-  /** Resolved for <img src> (legacy /uploads paths omitted). */
   logoPreviewUrl: string | null;
-  /** True when DB still has a /uploads path that no longer resolves on this host. */
   legacyRelativeLogo: boolean;
   driveRootFolderId: string;
   hubspotConnected: boolean;
@@ -46,6 +46,8 @@ type Props = {
 };
 
 export function SettingsForms({
+  telegramId,
+  updateTelegramId,
   tenant,
   logoPreviewUrl,
   legacyRelativeLogo,
@@ -317,6 +319,37 @@ export function SettingsForms({
             ))
           )}
         </ul>
+      </section>
+
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 lg:col-span-2">
+        <h2 className="font-display text-lg text-[var(--gold)]">Telegram</h2>
+        <p className="mt-1 text-sm text-[var(--txt3)]">
+          Link your Telegram account so the RE Agent OS bot can recognize you. Open Telegram,
+          message <code className="text-[var(--teal)]">@userinfobot</code> and paste the numeric ID below.
+        </p>
+        <form action={wrap(updateTelegramId)} className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end">
+          <div className="min-w-0 flex-1">
+            <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+              Telegram User ID
+            </label>
+            <input
+              name="telegramId"
+              defaultValue={telegramId ?? ""}
+              placeholder="e.g. 123456789"
+              className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 font-mono text-sm text-[var(--txt)]"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={pending}
+            className="shrink-0 rounded-md bg-[var(--teal)]/20 px-4 py-2 text-sm font-semibold text-[var(--teal)] disabled:opacity-50"
+          >
+            {pending ? "Saving…" : "Save Telegram ID"}
+          </button>
+        </form>
+        <p className="mt-3 text-xs text-[var(--txt3)]">
+          Clear the field and save to unlink.
+        </p>
       </section>
 
       <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 lg:col-span-2">

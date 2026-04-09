@@ -24,6 +24,20 @@ async function getTenantEditorContext(): Promise<TenantEditor | null> {
   return null;
 }
 
+export async function updateTelegramId(formData: FormData) {
+  const s = await auth();
+  if (!s?.user?.id) throw new Error("Unauthorized");
+
+  const raw = String(formData.get("telegramId") ?? "").trim();
+  const telegramId = raw.length > 0 ? raw : null;
+
+  await prisma.user.update({
+    where: { id: s.user.id },
+    data: { telegramId },
+  });
+  revalidatePath("/settings");
+}
+
 export async function updateTenantProfile(formData: FormData) {
   const ctx = await getTenantEditorContext();
   if (!ctx?.canEdit) throw new Error("Forbidden");

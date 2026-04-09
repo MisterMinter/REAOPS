@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { runAgent } from "@/agent/core";
 
 const MAX_TG_MESSAGE = 4096;
+const HISTORY_CAP = 20;
 
 export function truncateForTelegram(text: string): string {
   if (text.length <= MAX_TG_MESSAGE) return text;
@@ -19,24 +20,16 @@ export async function handleTelegramMessage(
     return "You're not linked to an RE Agent OS account yet. Ask your broker to add your Telegram ID in Settings.";
   }
 
-  const sessionKey = `tg:${telegramUserId}:${chatId}`;
   const existing = await prisma.chatSession.findFirst({
-    where: { userId: user.id },
+    where: {
+      userId: user.id,
+      channel: "telegram",
+      externalChatId: String(chatId),
+    },
     orderBy: { updatedAt: "desc" },
   });
 
-  let prevMessages: CoreMessage[] = [];
-  if (existing) {
-    try {
-      const raw = existing.messages as { role: string; content: string }[];
-      prevMessages = raw
-        .filter((m) => m.role === "user" || m.role === "assistant")
-        .slice(-20)
-        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
-    } catch {
-      prevMessages = [];
-    }
-  }
+  const prevMessages = existing ? deserializeHistory(existing.messages) : [];
 
   const messages: CoreMessage[] = [...prevMessages, { role: "user", content: text }];
 
@@ -45,6 +38,8 @@ export async function handleTelegramMessage(
       userId: user.id,
       messages,
       chatSessionId: existing?.id,
+      channel: "telegram",
+      externalChatId: String(chatId),
     });
     return truncateForTelegram(result.responseText || "Done — no text response from the agent.");
   } catch (e) {
@@ -54,22 +49,46 @@ export async function handleTelegramMessage(
 }
 
 async function findUserByTelegram(telegramUserId: number) {
-  const raw = String(telegramUserId);
-  const user = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { email: { contains: raw } },
-      ],
-    },
+  return prisma.user.findFirst({
+    where: { telegramId: String(telegramUserId) },
     select: { id: true, email: true, tenantId: true },
   });
-  if (user) return user;
+}
 
-  const byMeta = await prisma.user.findFirst({
-    where: {
-      assignedListings: { path: ["telegramId"], equals: raw },
-    },
-    select: { id: true, email: true, tenantId: true },
-  });
-  return byMeta ?? null;
+/**
+ * Reconstruct CoreMessage[] from the persisted JSON blob.
+ * Handles both string content and structured (tool-call/tool-result) content.
+ * Caps to the last HISTORY_CAP user+assistant pairs, keeping any trailing tool
+ * exchange intact so the model doesn't see a broken sequence.
+ */
+function deserializeHistory(raw: unknown): CoreMessage[] {
+  if (!Array.isArray(raw)) return [];
+
+  const messages: CoreMessage[] = [];
+  for (const m of raw) {
+    if (!m || typeof m !== "object" || !("role" in m) || !("content" in m)) continue;
+    const role = (m as Record<string, unknown>).role as string;
+    const content = (m as Record<string, unknown>).content;
+
+    if (role === "user" || role === "assistant") {
+      messages.push({ role, content } as CoreMessage);
+    } else if (role === "tool") {
+      messages.push({ role: "tool", content } as CoreMessage);
+    }
+  }
+
+  let cutIdx = 0;
+  let conversationalCount = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const r = messages[i].role;
+    if (r === "user" || r === "assistant") {
+      conversationalCount++;
+      if (conversationalCount > HISTORY_CAP) {
+        cutIdx = i + 1;
+        break;
+      }
+    }
+  }
+
+  return messages.slice(cutIdx);
 }

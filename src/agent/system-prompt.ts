@@ -11,6 +11,7 @@ export type AgentContext = {
   driveRootFolderId: string | null;
   listingCount: number;
   contactCount: number;
+  bufferConfigured: boolean;
 };
 
 export async function buildAgentContext(
@@ -55,6 +56,8 @@ export async function buildAgentContext(
     }
   }
 
+  const bufferConfigured = !!process.env.BUFFER_ACCESS_TOKEN;
+
   return {
     userId: user.id,
     userEmail: user.email,
@@ -66,6 +69,7 @@ export async function buildAgentContext(
     driveRootFolderId,
     listingCount,
     contactCount,
+    bufferConfigured,
   };
 }
 
@@ -81,6 +85,9 @@ export function buildSystemPrompt(ctx: AgentContext): string {
       ? `Drive root folder: ${ctx.driveRootFolderId}`
       : "No Drive root folder configured.",
     `Cached listings: ${ctx.listingCount}. Cached contacts: ${ctx.contactCount}.`,
+    ctx.bufferConfigured
+      ? "Buffer: connected — you can list profiles and create social media drafts."
+      : "Buffer: not configured (BUFFER_ACCESS_TOKEN missing). Mention this if user asks about social posting.",
     "",
     "Guidelines:",
     "- Be concise. Prefer bullet points and short paragraphs.",
