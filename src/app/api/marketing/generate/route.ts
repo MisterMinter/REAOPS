@@ -1,5 +1,6 @@
+import { streamText } from "ai";
 import { auth } from "@/auth";
-import { type ChatMessage, resolveAiProvider, streamAiChat } from "@/lib/ai-chat";
+import { resolveLanguageModel } from "@/lib/ai-chat";
 import {
   type ListingFacts,
   marketingSystemPrompt,
@@ -46,8 +47,8 @@ export async function POST(req: Request) {
   const effectiveTone =
     tenant?.defaultTone?.trim() || fromBody || "Warm but professional. First-name basis. No pressure.";
 
-  const provider = resolveAiProvider(body.provider ?? null);
-  if (!provider) {
+  const model = resolveLanguageModel(body.provider ?? null);
+  if (!model) {
     return new Response(
       JSON.stringify({
         error: "No AI API key configured (GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY).",
@@ -56,30 +57,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const system = marketingSystemPrompt(effectiveTone);
-  const userContent = marketingUserPrompt(facts, heroContext);
-  const messages: ChatMessage[] = [{ role: "user", content: userContent }];
-
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    async start(controller) {
-      try {
-        for await (const chunk of streamAiChat(provider, messages, system)) {
-          controller.enqueue(encoder.encode(chunk));
-        }
-        controller.close();
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "Unknown error";
-        controller.enqueue(encoder.encode(`\n\n[Error: ${msg}]`));
-        controller.close();
-      }
-    },
+  const result = streamText({
+    model,
+    system: marketingSystemPrompt(effectiveTone),
+    prompt: marketingUserPrompt(facts, heroContext),
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-store",
-    },
-  });
+  return result.toTextStreamResponse();
 }

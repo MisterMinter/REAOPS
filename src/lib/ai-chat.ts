@@ -1,8 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import OpenAI from "openai";
-
-export type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
+import type { LanguageModelV1 } from "ai";
 
 export type AiProviderName = "gemini" | "anthropic" | "openai";
 
@@ -22,9 +21,7 @@ export function defaultAiProvider(): AiProviderName | null {
 
   for (const raw of order) {
     const p = raw as AiProviderName;
-    if (p === "gemini" && avail.gemini) return "gemini";
-    if (p === "anthropic" && avail.anthropic) return "anthropic";
-    if (p === "openai" && avail.openai) return "openai";
+    if (avail[p]) return p;
   }
   if (avail.gemini) return "gemini";
   if (avail.anthropic) return "anthropic";
@@ -35,110 +32,33 @@ export function defaultAiProvider(): AiProviderName | null {
 export function resolveAiProvider(requested?: string | null): AiProviderName | null {
   const avail = availableAiProviders();
   const p = (requested ?? "").toLowerCase() as AiProviderName;
-  if (p === "gemini" && avail.gemini) return "gemini";
-  if (p === "anthropic" && avail.anthropic) return "anthropic";
-  if (p === "openai" && avail.openai) return "openai";
+  if (avail[p]) return p;
   return defaultAiProvider();
 }
 
-async function* streamGemini(messages: ChatMessage[], system: string): AsyncGenerator<string> {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("GEMINI_API_KEY missing");
-
-  const modelName = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
-  const genAI = new GoogleGenerativeAI(key);
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    systemInstruction: system,
-  });
-
-  const convo = messages
-    .filter((m) => m.role !== "system")
-    .map((m) => `${m.role === "assistant" ? "assistant" : "user"}: ${m.content}`)
-    .join("\n\n");
-
-  const stream = await model.generateContentStream(convo);
-  for await (const chunk of stream.stream) {
-    const t = chunk.text();
-    if (t) yield t;
-  }
-}
-
-async function* streamAnthropic(messages: ChatMessage[], system: string): AsyncGenerator<string> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error("ANTHROPIC_API_KEY missing");
-
-  const anthropic = new Anthropic({ apiKey: key });
-  const model = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
-
-  const msgs = messages
-    .filter((m) => m.role !== "system")
-    .map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
-
-  const stream = await anthropic.messages.stream({
-    model,
-    max_tokens: 4096,
-    system,
-    messages: msgs,
-  });
-
-  for await (const ev of stream) {
-    if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
-      yield ev.delta.text;
-    }
-  }
-}
-
-async function* streamOpenAI(messages: ChatMessage[], system: string): AsyncGenerator<string> {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error("OPENAI_API_KEY missing");
-
-  const openai = new OpenAI({ apiKey: key });
-  const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-
-  const msgs: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    { role: "system", content: system },
-    ...messages
-      .filter((m) => m.role !== "system")
-      .map((m) => ({
-        role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
-        content: m.content,
-      })),
-  ];
-
-  const stream = await openai.chat.completions.create({
-    model,
-    messages: msgs,
-    stream: true,
-  });
-
-  for await (const part of stream) {
-    const t = part.choices[0]?.delta?.content;
-    if (t) yield t;
-  }
-}
-
-export async function* streamAiChat(
-  provider: AiProviderName,
-  messages: ChatMessage[],
-  system: string
-): AsyncGenerator<string> {
+export function getLanguageModel(provider: AiProviderName): LanguageModelV1 {
   switch (provider) {
-    case "gemini":
-      yield* streamGemini(messages, system);
-      return;
-    case "anthropic":
-      yield* streamAnthropic(messages, system);
-      return;
-    case "openai":
-      yield* streamOpenAI(messages, system);
-      return;
+    case "gemini": {
+      const google = createGoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY! });
+      return google(process.env.GEMINI_MODEL ?? "gemini-2.0-flash");
+    }
+    case "anthropic": {
+      const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+      return anthropic(process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6");
+    }
+    case "openai": {
+      const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+      return openai(process.env.OPENAI_MODEL ?? "gpt-4o-mini");
+    }
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unknown provider: ${_exhaustive}`);
     }
   }
+}
+
+export function resolveLanguageModel(requested?: string | null): LanguageModelV1 | null {
+  const provider = resolveAiProvider(requested);
+  if (!provider) return null;
+  return getLanguageModel(provider);
 }

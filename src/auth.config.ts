@@ -23,8 +23,14 @@ export const authConfig = {
             allowDangerousEmailAccountLinking: true,
             authorization: {
               params: {
-                scope:
-                  "openid email profile https://www.googleapis.com/auth/drive.readonly",
+                scope: [
+                  "openid",
+                  "email",
+                  "profile",
+                  "https://www.googleapis.com/auth/drive",
+                  "https://www.googleapis.com/auth/calendar",
+                  "https://www.googleapis.com/auth/gmail.compose",
+                ].join(" "),
                 access_type: "offline",
                 prompt: "consent",
               },

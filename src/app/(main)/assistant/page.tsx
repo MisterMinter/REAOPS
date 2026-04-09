@@ -44,8 +44,9 @@ export default async function AssistantPage() {
     <div>
       <h1 className="font-display text-3xl text-[var(--txt)]">Broker Assistant</h1>
       <p className="mt-2 max-w-2xl text-[var(--txt2)]">
-        Streaming chat below uses your server-side API keys (Gemini preferred, or Anthropic / OpenAI). Listing and CRM
-        context will plug in as sync ships.
+        AI agent with tools for Google Drive, Calendar, property listings, marketing generation,
+        follow-ups, and portfolio analysis. Ask anything — the agent will call the right tools
+        automatically.
       </p>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
-
 type ProviderKey = "gemini" | "anthropic" | "openai";
 
 export function AssistantComposer() {
@@ -12,6 +11,7 @@ export function AssistantComposer() {
   const [loading, setLoading] = useState(false);
   const [provider, setProvider] = useState<ProviderKey | "">("");
   const [providers, setProviders] = useState<Partial<Record<ProviderKey, boolean>>>({});
+  const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,56 +45,37 @@ export function AssistantComposer() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/assistant/chat", {
+      const res = await fetch("/api/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: nextMessages,
           provider: provider || undefined,
+          chatSessionId: chatSessionId ?? undefined,
         }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }));
         setMessages((m) => [
           ...m,
-          { role: "assistant", content: `Could not reach the model: ${err.error ?? res.statusText}` },
+          { role: "assistant", content: data.error ?? res.statusText },
         ]);
         setLoading(false);
         return;
       }
 
-      const reader = res.body?.getReader();
-      if (!reader) {
-        setMessages((m) => [...m, { role: "assistant", content: "(No response stream)" }]);
-        setLoading(false);
-        return;
-      }
+      if (data.chatSessionId) setChatSessionId(data.chatSessionId);
 
-      const dec = new TextDecoder();
-      let acc = "";
-      setMessages((m) => [...m, { role: "assistant", content: "" }]);
-
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        acc += dec.decode(value, { stream: true });
-        setMessages((m) => {
-          const copy = [...m];
-          const last = copy[copy.length - 1];
-          if (last?.role === "assistant") {
-            copy[copy.length - 1] = { ...last, content: acc };
-          }
-          return copy;
-        });
-      }
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", content: data.text || "(No response)" },
+      ]);
     } catch (e) {
       setMessages((m) => [
         ...m,
-        {
-          role: "assistant",
-          content: e instanceof Error ? e.message : "Request failed",
-        },
+        { role: "assistant", content: e instanceof Error ? e.message : "Request failed" },
       ]);
     } finally {
       setLoading(false);
@@ -104,7 +85,7 @@ export function AssistantComposer() {
   return (
     <div className="mt-8 flex flex-col rounded-lg border border-[var(--border)] bg-[var(--card)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
-        <div className="text-sm font-medium text-[var(--txt)]">Composer</div>
+        <div className="text-sm font-medium text-[var(--txt)]">Agent Chat</div>
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs text-[var(--txt3)]">Model provider</label>
           <select
@@ -126,15 +107,15 @@ export function AssistantComposer() {
           Add <code className="text-[var(--teal)]">GEMINI_API_KEY</code>,{" "}
           <code className="text-[var(--teal)]">ANTHROPIC_API_KEY</code>, or{" "}
           <code className="text-[var(--teal)]">OPENAI_API_KEY</code> in Railway (or{" "}
-          <code className="text-[var(--teal)]">.env</code> locally). Optional:{" "}
-          <code className="text-[var(--teal)]">AI_PROVIDER=gemini,anthropic,openai</code> for priority order.
+          <code className="text-[var(--teal)]">.env</code> locally).
         </p>
       )}
 
-      <div className="max-h-[28rem] min-h-[12rem] space-y-4 overflow-y-auto p-4">
+      <div className="max-h-[32rem] min-h-[14rem] space-y-4 overflow-y-auto p-4">
         {messages.length === 0 && (
           <p className="text-sm text-[var(--txt3)]">
-            Ask about listings, marketing copy, or workflow. Everything runs server-side; keys stay on the server.
+            Ask about listings, marketing copy, calendar, follow-ups, or portfolio analysis. The agent
+            has tools for Drive, Calendar, Zillow, marketing generation, and more.
           </p>
         )}
         {messages.map((m, i) => (
@@ -147,13 +128,16 @@ export function AssistantComposer() {
             }`}
           >
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--txt3)]">
-              {m.role === "user" ? "You" : "Assistant"}
+              {m.role === "user" ? "You" : "Agent"}
             </div>
             <div className="whitespace-pre-wrap">{m.content}</div>
           </div>
         ))}
-        {loading && messages[messages.length - 1]?.role === "user" && (
-          <p className="text-xs text-[var(--txt3)]">Thinking…</p>
+        {loading && (
+          <div className="flex items-center gap-2 text-xs text-[var(--txt3)]">
+            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-[var(--gold)]" />
+            Agent is thinking and may be calling tools...
+          </div>
         )}
         <div ref={bottomRef} />
       </div>
@@ -170,7 +154,7 @@ export function AssistantComposer() {
               }
             }}
             rows={3}
-            placeholder="Message… (Enter to send, Shift+Enter for newline)"
+            placeholder="Message the agent... (Enter to send, Shift+Enter for newline)"
             disabled={loading || !configured}
             className="min-h-[5rem] w-full flex-1 resize-y rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)] placeholder:text-[var(--txt3)] disabled:opacity-50"
           />
@@ -180,7 +164,7 @@ export function AssistantComposer() {
             disabled={loading || !configured || !input.trim()}
             className="shrink-0 rounded-md bg-[var(--gold)] px-5 py-2 text-sm font-semibold text-[var(--bg)] disabled:opacity-50"
           >
-            {loading ? "Sending…" : "Send"}
+            {loading ? "Working..." : "Send"}
           </button>
         </div>
       </div>

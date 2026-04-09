@@ -224,6 +224,17 @@ export default async function MarketingPage() {
         <MarketingPackWorkspace listings={workspaceListings} defaultTone={defaultTone} />
       )}
 
+      <section className="mt-10 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6">
+        <h2 className="font-medium text-[var(--txt)]">Agent-powered marketing</h2>
+        <p className="mt-2 text-sm text-[var(--txt2)]">
+          You can also generate marketing packs, save docs to Drive, and draft Buffer posts through the{" "}
+          <Link href="/assistant" className="text-[var(--teal)] hover:underline">
+            Broker Assistant
+          </Link>{" "}
+          agent chat. Just ask: &ldquo;Generate a marketing pack for 123 Main St&rdquo;.
+        </p>
+      </section>
+
       <Link
         href="/start"
         className="mt-10 inline-block text-sm font-medium text-[var(--gold)] hover:underline"

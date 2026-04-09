@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     });
   }
 
-  let body: { messages?: { role: string; content: string }[]; provider?: string };
+  let body: { messages?: { role: string; content: string }[]; provider?: string; chatSessionId?: string };
   try {
     body = await req.json();
   } catch {
@@ -45,14 +45,20 @@ export async function POST(req: Request) {
       userId: session.user.id,
       messages,
       provider: body.provider,
+      chatSessionId: body.chatSessionId,
     });
 
     return new Response(
-      JSON.stringify({ text: result.responseText, chatSessionId: result.chatSessionId }),
-      { headers: { "Content-Type": "application/json" } }
+      JSON.stringify({
+        text: result.responseText,
+        chatSessionId: result.chatSessionId,
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+      }
     );
   } catch (e) {
-    console.error("Assistant chat (agent) error:", e);
+    console.error("Agent chat error:", e);
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "Agent execution failed" }),
       { status: 500, headers: { "Content-Type": "application/json" } }
