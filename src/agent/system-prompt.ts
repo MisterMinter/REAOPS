@@ -12,6 +12,8 @@ export type AgentContext = {
   listingCount: number;
   contactCount: number;
   bufferConfigured: boolean;
+  flyerNotifyEmail: string | null;
+  brokerPhone: string | null;
 };
 
 export async function buildAgentContext(
@@ -35,6 +37,8 @@ export async function buildAgentContext(
   let driveRootFolderId: string | null = null;
   let listingCount = 0;
   let contactCount = 0;
+  let flyerNotifyEmail: string | null = null;
+  let brokerPhone: string | null = null;
 
   if (user.tenantId) {
     const t = await prisma.tenant.findUnique({
@@ -43,6 +47,8 @@ export async function buildAgentContext(
         name: true,
         brokerageName: true,
         defaultTone: true,
+        brokerPhone: true,
+        flyerNotifyEmail: true,
         driveConfig: { select: { rootFolderId: true } },
         _count: { select: { cachedListings: true, cachedContacts: true } },
       },
@@ -53,6 +59,8 @@ export async function buildAgentContext(
       driveRootFolderId = t.driveConfig?.rootFolderId ?? null;
       listingCount = t._count.cachedListings;
       contactCount = t._count.cachedContacts;
+      flyerNotifyEmail = t.flyerNotifyEmail ?? null;
+      brokerPhone = t.brokerPhone ?? null;
     }
   }
 
@@ -70,6 +78,8 @@ export async function buildAgentContext(
     listingCount,
     contactCount,
     bufferConfigured,
+    flyerNotifyEmail,
+    brokerPhone,
   };
 }
 
@@ -97,6 +107,12 @@ export function buildSystemPrompt(ctx: AgentContext): string {
     "- For calendar events, always confirm date/time before creating.",
     "- For file operations, describe what you will do before executing.",
     "- For flyers: use flyer_create to generate a PDF + social PNG. The AI picks the best template style (modern/luxury/bold) and colors. You can override with a specific style if the user asks. Use flyer_email to send the PDF to someone.",
+    ctx.flyerNotifyEmail
+      ? `- Default flyer email recipient: ${ctx.flyerNotifyEmail}. Use this address when the user says "email the flyer" without specifying a recipient.`
+      : "- No default flyer email configured. Ask for a recipient when the user wants to email a flyer.",
+    ctx.brokerPhone
+      ? `- Broker phone: ${ctx.brokerPhone}. Include this on flyers and marketing materials.`
+      : "",
     "- When you have results from a tool call, summarize them conversationally — don't dump raw JSON.",
   ];
   return lines.join("\n");

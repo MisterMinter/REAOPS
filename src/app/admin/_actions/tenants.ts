@@ -22,6 +22,8 @@ export async function createTenant(formData: FormData) {
 
   let slug = String(formData.get("slug") ?? "").trim() || slugify(name);
   const brokerageName = String(formData.get("brokerageName") ?? "").trim() || null;
+  const brokerPhone = String(formData.get("brokerPhone") ?? "").trim() || null;
+  const flyerNotifyEmail = String(formData.get("flyerNotifyEmail") ?? "").trim() || null;
 
   const existing = await prisma.tenant.findUnique({ where: { slug } });
   if (existing) slug = `${slug}-${Date.now().toString(36)}`;
@@ -31,6 +33,8 @@ export async function createTenant(formData: FormData) {
       name,
       slug,
       brokerageName,
+      brokerPhone,
+      flyerNotifyEmail,
       hubspotListingProps: DEFAULT_DEAL_MAPPING as object,
     },
   });
@@ -44,6 +48,8 @@ export async function updateTenant(tenantId: string, formData: FormData) {
   if (!name) redirect(`/admin/tenants/${tenantId}?error=missing-name`);
 
   const brokerageName = String(formData.get("brokerageName") ?? "").trim() || null;
+  const brokerPhone = String(formData.get("brokerPhone") ?? "").trim() || null;
+  const flyerNotifyEmail = String(formData.get("flyerNotifyEmail") ?? "").trim() || null;
   const defaultTone = String(formData.get("defaultTone") ?? "").trim();
   const hubspotListingObject = String(formData.get("hubspotListingObject") ?? "deals").trim() || "deals";
   const raw = String(formData.get("hubspotListingProps") ?? "");
@@ -59,6 +65,8 @@ export async function updateTenant(tenantId: string, formData: FormData) {
     data: {
       name,
       brokerageName,
+      brokerPhone,
+      flyerNotifyEmail,
       defaultTone: defaultTone || undefined,
       hubspotListingObject,
       hubspotListingProps: props,

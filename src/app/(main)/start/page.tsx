@@ -138,6 +138,13 @@ export default async function StartPage() {
               hrefLabel="Integration status →"
             />
             <Step
+              done={snap.hasFlyerEmail}
+              title="Set flyer notification email"
+              detail="The agent sends flyer PDFs to this address by default. Also shown on marketing materials."
+              href="/settings"
+              hrefLabel={snap.role === "AGENT" ? "View settings →" : "Open settings →"}
+            />
+            <Step
               done={snap.listingCount > 0}
               title="Listings available for marketing"
               detail={

@@ -47,6 +47,30 @@ export default async function NewTenantPage({
             className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[var(--txt)]"
           />
         </div>
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+            Broker phone (optional)
+          </label>
+          <input
+            name="brokerPhone"
+            placeholder="(555) 123-4567"
+            className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[var(--txt)]"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+            Flyer notification email (optional)
+          </label>
+          <input
+            name="flyerNotifyEmail"
+            type="email"
+            placeholder="contracts@brokerage.com"
+            className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[var(--txt)]"
+          />
+          <p className="mt-1 text-xs text-[var(--txt3)]">
+            Default recipient for flyer emails. Brokers can change this in Settings.
+          </p>
+        </div>
         <button
           type="submit"
           className="rounded-md bg-[var(--gold)] px-4 py-2 text-sm font-semibold text-[var(--bg)]"

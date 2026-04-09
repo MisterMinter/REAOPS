@@ -157,6 +157,8 @@ export default async function SettingsPage({
             defaultTone: tenant.defaultTone,
             logoUrl: tenant.logoUrl,
             hubspotListingObject: tenant.hubspotListingObject,
+            brokerPhone: tenant.brokerPhone,
+            flyerNotifyEmail: tenant.flyerNotifyEmail,
           }}
           logoPreviewUrl={resolveTenantLogoForDisplay(tenant.logoUrl)}
           legacyRelativeLogo={hasLegacyRelativeLogoPath(tenant.logoUrl)}

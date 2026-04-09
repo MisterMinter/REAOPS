@@ -19,6 +19,7 @@ export type OnboardingSnapshot = {
   listingCount: number;
   contactCount: number;
   hasLogo: boolean;
+  hasFlyerEmail: boolean;
 };
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -51,6 +52,7 @@ export async function getOnboardingSnapshot(
   let listingCount = 0;
   let contactCount = 0;
   let hasLogo = false;
+  let hasFlyerEmail = false;
 
   if (input.tenantId) {
     const t = await prisma.tenant.findUnique({
@@ -59,6 +61,7 @@ export async function getOnboardingSnapshot(
         name: true,
         brokerageName: true,
         logoUrl: true,
+        flyerNotifyEmail: true,
         hubspotTokens: { select: { id: true } },
         bufferTokens: { select: { id: true } },
         driveConfig: { select: { id: true, rootFolderId: true } },
@@ -69,6 +72,7 @@ export async function getOnboardingSnapshot(
     if (t) {
       tenantName = t.brokerageName ?? t.name;
       hasLogo = Boolean(t.logoUrl);
+      hasFlyerEmail = Boolean(t.flyerNotifyEmail);
       hasDriveFolder = Boolean(t.driveConfig);
       hubspotConnected = Boolean(t.hubspotTokens);
       bufferConnected = Boolean(t.bufferTokens);
@@ -110,6 +114,7 @@ export async function getOnboardingSnapshot(
     listingCount,
     contactCount,
     hasLogo,
+    hasFlyerEmail,
   };
 }
 

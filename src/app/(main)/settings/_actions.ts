@@ -44,12 +44,16 @@ export async function updateTenantProfile(formData: FormData) {
 
   const brokerageName = String(formData.get("brokerageName") ?? "").trim() || null;
   const defaultTone = String(formData.get("defaultTone") ?? "").trim();
+  const brokerPhone = String(formData.get("brokerPhone") ?? "").trim() || null;
+  const flyerNotifyEmail = String(formData.get("flyerNotifyEmail") ?? "").trim() || null;
 
   await prisma.tenant.update({
     where: { id: ctx.tenantId },
     data: {
       brokerageName,
       defaultTone: defaultTone.length > 0 ? defaultTone : "Warm but professional. First-name basis. No pressure.",
+      brokerPhone,
+      flyerNotifyEmail,
     },
   });
   revalidatePath("/settings");

@@ -11,6 +11,8 @@ type TenantProps = {
   defaultTone: string;
   logoUrl: string | null;
   hubspotListingObject: string;
+  brokerPhone: string | null;
+  flyerNotifyEmail: string | null;
 };
 
 type Props = {
@@ -114,6 +116,35 @@ export function SettingsForms({
               disabled={!canEdit}
               className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)] disabled:opacity-50"
             />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+              Broker phone number
+            </label>
+            <input
+              name="brokerPhone"
+              defaultValue={tenant.brokerPhone ?? ""}
+              disabled={!canEdit}
+              placeholder="(555) 123-4567"
+              className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[var(--txt)] disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+              Flyer notification email
+            </label>
+            <input
+              name="flyerNotifyEmail"
+              type="email"
+              defaultValue={tenant.flyerNotifyEmail ?? ""}
+              disabled={!canEdit}
+              placeholder="contracts@yourbrokerage.com"
+              className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[var(--txt)] disabled:opacity-50"
+            />
+            <p className="mt-1 text-xs text-[var(--txt3)]">
+              Default email for flyer delivery. The agent will send flyers here unless told otherwise.
+              Emails are sent from the signed-in user&apos;s Google account.
+            </p>
           </div>
           {canEdit && (
             <button

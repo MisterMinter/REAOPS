@@ -92,6 +92,32 @@ export default async function EditTenantPage({
         </div>
         <div>
           <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+            Broker phone
+          </label>
+          <input
+            name="brokerPhone"
+            defaultValue={tenant.brokerPhone ?? ""}
+            placeholder="(555) 123-4567"
+            className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[var(--txt)]"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+            Flyer notification email
+          </label>
+          <input
+            name="flyerNotifyEmail"
+            type="email"
+            defaultValue={tenant.flyerNotifyEmail ?? ""}
+            placeholder="contracts@brokerage.com"
+            className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[var(--txt)]"
+          />
+          <p className="mt-1 text-xs text-[var(--txt3)]">
+            Default recipient for flyer PDFs. The agent uses this when no email is specified.
+          </p>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
             Default tone (marketing)
           </label>
           <textarea

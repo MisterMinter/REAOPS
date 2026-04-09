@@ -55,7 +55,14 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
   const system = buildSystemPrompt(ctx);
 
   const accessToken = await getAccessToken(input.userId);
-  const toolCtx = { accessToken, tenantId: ctx.tenantId, driveRootFolderId: ctx.driveRootFolderId, defaultTone: ctx.defaultTone };
+  const toolCtx = {
+    accessToken,
+    tenantId: ctx.tenantId,
+    driveRootFolderId: ctx.driveRootFolderId,
+    defaultTone: ctx.defaultTone,
+    flyerNotifyEmail: ctx.flyerNotifyEmail,
+    brokerPhone: ctx.brokerPhone,
+  };
 
   const allTools = {
     ...driveTools(toolCtx),

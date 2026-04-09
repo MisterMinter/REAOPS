@@ -66,6 +66,8 @@ model Tenant {
 
   defaultTone          String @default("Warm but professional. First-name basis. No pressure.")
   complianceStandard   String @default("ga_residential")
+  brokerPhone          String?
+  flyerNotifyEmail     String?
 
   users                 User[]
   activityLogs          ActivityLog[]

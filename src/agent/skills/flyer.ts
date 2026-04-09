@@ -125,14 +125,17 @@ export function flyerTools(ctx: ToolContext) {
     flyer_email: tool({
       description:
         "Email a property flyer PDF to a recipient. Creates the flyer if needed, " +
-        "then sends it as a Gmail attachment from the broker's account.",
+        "then sends it as a Gmail attachment from the signed-in user's Google account. " +
+        "If recipientEmail is omitted, uses the tenant's configured flyer notification email.",
       parameters: z.object({
         listingId: z.string().describe("CachedListing ID for the property."),
-        recipientEmail: z.string().describe("Email address to send the flyer to."),
+        recipientEmail: z.string().optional().describe("Email address to send the flyer to. Falls back to the configured flyer notification email."),
         templateStyle: z.enum(["modern", "luxury", "bold"]).optional(),
       }),
       execute: async ({ listingId, recipientEmail, templateStyle }) => {
         if (!ctx.accessToken) return { error: "No Google token — cannot send email." };
+        const toEmail = recipientEmail || ctx.flyerNotifyEmail;
+        if (!toEmail) return { error: "No recipient email provided and no default flyer notification email configured in settings." };
 
         const model = resolveLanguageModel();
         if (!model) return { error: "No AI provider configured." };
@@ -177,13 +180,13 @@ export function flyerTools(ctx: ToolContext) {
         try {
           const result = await sendEmail({
             accessToken: ctx.accessToken,
-            to: recipientEmail,
+            to: toEmail,
             subject: `Property Flyer: ${shortAddr}`,
             bodyHtml: `<p>Hi,</p><p>Please find attached the property flyer for <strong>${shortAddr}</strong>.</p><p>Best regards,<br/>${broker.name}</p>`,
             pdfBuffer,
             pdfFilename,
           });
-          return { success: true, messageId: result.messageId, sentTo: recipientEmail };
+          return { success: true, messageId: result.messageId, sentTo: toEmail };
         } catch (e) {
           console.error("[flyer] Email send failed:", e);
           return { error: `Failed to send email: ${e instanceof Error ? e.message : "unknown"}` };
@@ -261,7 +264,7 @@ async function resolveBroker(tenantId: string | null): Promise<BrokerInfo> {
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
-    select: { brokerageName: true, name: true, logoUrl: true },
+    select: { brokerageName: true, name: true, logoUrl: true, brokerPhone: true, flyerNotifyEmail: true },
   });
 
   const users = await prisma.user.findMany({
@@ -274,8 +277,8 @@ async function resolveBroker(tenantId: string | null): Promise<BrokerInfo> {
   return {
     name: tenant?.brokerageName ?? tenant?.name ?? "Brokerage",
     logo: tenant?.logoUrl ?? null,
-    phone: "",
-    email: owner?.email ?? "",
+    phone: tenant?.brokerPhone ?? "",
+    email: tenant?.flyerNotifyEmail ?? owner?.email ?? "",
   };
 }
 
