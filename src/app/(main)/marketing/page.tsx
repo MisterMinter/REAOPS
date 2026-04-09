@@ -9,6 +9,37 @@ import { getOnboardingSnapshot } from "@/lib/onboarding";
 import { autoLinkDriveFolders, buildMarketingListingRows } from "@/lib/marketing-listings";
 import { prisma } from "@/lib/prisma";
 
+/**
+ * Try the current user's token first, then fall back to any other tenant
+ * member who has a valid Google refresh token. Drive folders are tenant-level
+ * resources — any team member's token can list them.
+ */
+async function getAnyTenantDriveToken(
+  currentUserId: string,
+  tenantId: string
+): Promise<string | null> {
+  const own = await getGoogleAccessTokenForUser(currentUserId);
+  if (own) return own;
+
+  const accounts = await prisma.account.findMany({
+    where: {
+      provider: "google",
+      user: { tenantId },
+      refresh_token: { not: null },
+      NOT: { userId: currentUserId },
+    },
+    select: { userId: true },
+    take: 5,
+  });
+
+  for (const acct of accounts) {
+    const token = await getGoogleAccessTokenForUser(acct.userId);
+    if (token) return token;
+  }
+
+  return null;
+}
+
 function driveOnlyFacts(title: string): ListingFacts {
   return {
     address: title,
@@ -125,24 +156,26 @@ export default async function MarketingPage() {
 
   let driveFolders: DriveFolderRef[] = [];
   let driveListError: string | null = null;
-  const driveToken = await getGoogleAccessTokenForUser(user.id);
-  if (driveCfg && driveToken) {
-    try {
-      driveFolders = await listDriveListingFolders(driveToken, driveCfg.rootFolderId);
-    } catch (e) {
-      console.error("Drive listDriveListingFolders", e);
-      const msg = e instanceof Error ? e.message : "";
-      const authRejected =
-        msg.includes("401") ||
-        msg.includes("invalid authentication") ||
-        msg.includes("Invalid Credentials");
-      driveListError = authRejected
-        ? "Google rejected the Drive credentials (expired or revoked). Sign out of the app, sign in again with Google. If it keeps happening: Google Account → Security → Third-party access → remove this app → sign in once more (to capture a fresh refresh token), and confirm the Google Cloud project has the Drive API enabled."
-        : "Could not load Drive folders. Try signing out and back in with Google.";
+  if (driveCfg) {
+    const driveToken = await getAnyTenantDriveToken(user.id, tenantId);
+    if (driveToken) {
+      try {
+        driveFolders = await listDriveListingFolders(driveToken, driveCfg.rootFolderId);
+      } catch (e) {
+        console.error("Drive listDriveListingFolders", e);
+        const msg = e instanceof Error ? e.message : "";
+        const authRejected =
+          msg.includes("401") ||
+          msg.includes("invalid authentication") ||
+          msg.includes("Invalid Credentials");
+        driveListError = authRejected
+          ? "Google rejected the Drive credentials (expired or revoked). Sign out of the app, sign in again with Google. If it keeps happening: Google Account → Security → Third-party access → remove this app → sign in once more (to capture a fresh refresh token), and confirm the Google Cloud project has the Drive API enabled."
+          : "Could not load Drive folders. Try signing out and back in with Google.";
+      }
+    } else {
+      driveListError =
+        "No usable Google token for Drive in your brokerage. At least one team member needs to sign in with Google (with offline access) so Drive folders can be listed for everyone.";
     }
-  } else if (driveCfg && !driveToken) {
-    driveListError =
-      "No usable Google token for Drive (missing refresh token or refresh failed). Sign out, sign in again with the same Google account. First-time consent must include offline access so a refresh token is stored.";
   }
 
   // Auto-link Drive folders to Zillow/CRM listings by fuzzy address match

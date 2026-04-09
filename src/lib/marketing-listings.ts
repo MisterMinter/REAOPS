@@ -165,9 +165,41 @@ export function buildMarketingListingRows(
 // Address normalization + fuzzy matching
 // ---------------------------------------------------------------------------
 
+const STREET_SUFFIXES: Record<string, string> = {
+  street: "st", st: "st",
+  avenue: "ave", ave: "ave", av: "ave",
+  drive: "dr", dr: "dr",
+  lane: "ln", ln: "ln",
+  court: "ct", ct: "ct",
+  place: "pl", pl: "pl",
+  circle: "cir", cir: "cir",
+  boulevard: "blvd", blvd: "blvd",
+  road: "rd", rd: "rd",
+  way: "way",
+  trail: "trl", trl: "trl",
+  terrace: "ter", ter: "ter",
+  parkway: "pkwy", pkwy: "pkwy",
+  highway: "hwy", hwy: "hwy",
+  crossing: "xing", xing: "xing",
+  point: "pt", pt: "pt",
+  pass: "pass",
+  run: "run",
+  walk: "walk",
+  hollow: "holw", holw: "holw",
+
+  north: "n", n: "n",
+  south: "s", s: "s",
+  east: "e", e: "e",
+  west: "w", w: "w",
+  northeast: "ne", ne: "ne",
+  northwest: "nw", nw: "nw",
+  southeast: "se", se: "se",
+  southwest: "sw", sw: "sw",
+};
+
 /**
  * Normalize an address string for comparison: lowercase, strip punctuation,
- * collapse whitespace, remove common suffixes like "st", "ave", "dr", etc.
+ * expand/collapse street suffix abbreviations, remove unit/apt qualifiers.
  */
 function normalizeAddress(raw: string): string {
   return raw
@@ -175,21 +207,21 @@ function normalizeAddress(raw: string): string {
     .replace(/[.,#\-_/\\()]/g, " ")
     .replace(/\b(apt|unit|suite|ste|bldg|building|floor|fl)\b\s*\S*/gi, "")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .split(/\s+/)
+    .map((tok) => STREET_SUFFIXES[tok] ?? tok)
+    .join(" ");
 }
 
 /**
  * Compute similarity between two normalized address strings.
- * Uses token overlap (Jaccard-like) — works well for addresses where
- * word order may differ or partial info is present (e.g. "123 Main" vs "123 Main St, Springfield").
+ * Uses token overlap (Jaccard-like) + containment checks.
  */
 function addressSimilarity(a: string, b: string): number {
   if (!a || !b) return 0;
 
-  // Exact match
   if (a === b) return 1;
 
-  // One fully contains the other
   if (a.includes(b) || b.includes(a)) return 0.95;
 
   const tokensA = new Set(a.split(/\s+/).filter(Boolean));
@@ -202,13 +234,9 @@ function addressSimilarity(a: string, b: string): number {
     if (tokensB.has(t)) overlap++;
   }
 
-  // Jaccard: overlap / union
   const union = tokensA.size + tokensB.size - overlap;
   const jaccard = overlap / union;
-
-  // Also weight by how much of the smaller set is covered (recall)
   const recall = overlap / Math.min(tokensA.size, tokensB.size);
 
-  // Blend: primarily recall (street number + name match is key), with Jaccard as tiebreaker
   return recall * 0.7 + jaccard * 0.3;
 }
