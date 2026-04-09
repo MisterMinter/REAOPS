@@ -173,26 +173,65 @@ export async function scrapeZillowProfile(profileUrl: string): Promise<ZillowPro
   const url = validateZillowUrl(profileUrl);
   const app = await getFirecrawlApp();
 
-  const result = await app.scrapeUrl(url, {
-    formats: ["extract"],
-    extract: { schema: PROFILE_EXTRACT_SCHEMA },
-    waitFor: 3000,
-  });
+  // Try structured extract first (richer data), fall back to HTML + regex on timeout
+  try {
+    const result = await app.scrapeUrl(url, {
+      formats: ["extract"],
+      extract: { schema: PROFILE_EXTRACT_SCHEMA },
+      waitFor: 10000,
+      timeout: 60000,
+    } as Record<string, unknown>);
 
-  if (!result.success) {
-    throw new Error(`Firecrawl profile scrape failed: ${result.error ?? "unknown"}`);
+    if (result.success && result.extract) {
+      const data = result.extract as Record<string, unknown>;
+      return {
+        agentName: str(data.agentName),
+        agentEmail: str(data.agentEmail),
+        agentPhone: str(data.agentPhone),
+        brokerageName: str(data.brokerageName),
+        activeListings: normalizeListings(data.activeListings, "For Sale"),
+        soldListings: normalizeListings(data.soldListings, "Sold"),
+        rentals: normalizeListings(data.rentals, "For Rent"),
+      };
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    console.warn(`Firecrawl extract timed out or failed (${msg.slice(0, 100)}), falling back to HTML scrape`);
   }
 
-  const data = (result.extract ?? {}) as Record<string, unknown>;
+  // Fallback: scrape as HTML and parse with regex
+  const htmlResult = await app.scrapeUrl(url, {
+    formats: ["html"],
+    waitFor: 10000,
+    timeout: 60000,
+  } as Record<string, unknown>);
 
+  if (!htmlResult.success || !htmlResult.html) {
+    throw new Error(`Firecrawl scrape failed: ${htmlResult.error ?? "no HTML returned"}`);
+  }
+
+  const hints = parseZillowListingHints(htmlResult.html);
   return {
-    agentName: str(data.agentName),
-    agentEmail: str(data.agentEmail),
-    agentPhone: str(data.agentPhone),
-    brokerageName: str(data.brokerageName),
-    activeListings: normalizeListings(data.activeListings, "For Sale"),
-    soldListings: normalizeListings(data.soldListings, "Sold"),
-    rentals: normalizeListings(data.rentals, "For Rent"),
+    agentName: null,
+    agentEmail: null,
+    agentPhone: null,
+    brokerageName: null,
+    activeListings: hints.map((h) => ({
+      zpid: h.zpid,
+      address: h.addressGuess,
+      city: "",
+      state: "",
+      zip: "",
+      beds: null,
+      baths: null,
+      sqft: null,
+      price: "—",
+      status: "For Sale",
+      listingUrl: h.listingUrl,
+      thumbnailUrl: null,
+    })),
+    soldListings: [],
+    rentals: [],
   };
 }
 
@@ -203,8 +242,9 @@ export async function scrapeZillowListingDetail(listingUrl: string): Promise<Zil
   const result = await app.scrapeUrl(url, {
     formats: ["extract"],
     extract: { schema: LISTING_EXTRACT_SCHEMA },
-    waitFor: 3000,
-  });
+    waitFor: 10000,
+    timeout: 60000,
+  } as Record<string, unknown>);
 
   if (!result.success) {
     throw new Error(`Firecrawl listing scrape failed: ${result.error ?? "unknown"}`);
@@ -319,7 +359,11 @@ export async function fetchZillowProfileHtml(profileUrl: string): Promise<string
   if (process.env.FIRECRAWL_API_KEY?.trim()) {
     try {
       const app = await getFirecrawlApp();
-      const result = await app.scrapeUrl(url, { formats: ["html"], waitFor: 3000 });
+      const result = await app.scrapeUrl(url, {
+        formats: ["html"],
+        waitFor: 10000,
+        timeout: 60000,
+      } as Record<string, unknown>);
       if (result.success && result.html) return result.html;
     } catch (e) {
       console.warn("Firecrawl HTML fallback failed:", e instanceof Error ? e.message : e);
