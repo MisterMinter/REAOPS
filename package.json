@@ -18,6 +18,7 @@
     "@ai-sdk/google": "^1.0.0",
     "@ai-sdk/openai": "^1.0.0",
     "@auth/prisma-adapter": "^2.7.4",
+    "@mendable/firecrawl-js": "^1.21.1",
     "@prisma/client": "^6.3.1",
     "ai": "^4.0.0",
     "googleapis": "^171.4.0",
