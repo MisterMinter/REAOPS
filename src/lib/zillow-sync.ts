@@ -7,6 +7,8 @@ import {
   type ZillowProfileListing,
   type ZillowListingDetail,
 } from "@/lib/zillow-scrape";
+import { autoLinkDriveFolders } from "@/lib/marketing-listings";
+import { listDriveListingFolders } from "@/lib/drive";
 
 function parsePrice(display: string): number | null {
   const clean = display.replace(/[^0-9.]/g, "");
@@ -152,6 +154,13 @@ async function syncViaFirecrawl(
     }
   } else {
     log("Step 3: Skipped (no active listing URLs)");
+  }
+
+  // Step 4: Auto-link Drive folders to newly synced listings
+  try {
+    await tryAutoLinkDrive(tenantId);
+  } catch (e) {
+    log("Drive auto-link failed (non-fatal)", e instanceof Error ? e.message : e);
   }
 
   await prisma.zillowProfileSource.update({
@@ -377,6 +386,45 @@ async function syncViaHtmlFallback(
   });
 
   return { imported: hints.length, detailed: 0, errors, durationMs: 0 };
+}
+
+/**
+ * After syncing Zillow listings, try to auto-link Drive folders by address match.
+ * Requires a valid Drive access token — uses the first account that has one.
+ */
+async function tryAutoLinkDrive(tenantId: string) {
+  const driveCfg = await prisma.driveConfig.findUnique({
+    where: { tenantId },
+    select: { rootFolderId: true },
+  });
+  if (!driveCfg) return;
+
+  // Find a user with a Google account token to list Drive folders
+  const account = await prisma.account.findFirst({
+    where: {
+      provider: "google",
+      user: { tenantId },
+      refresh_token: { not: null },
+    },
+    select: { userId: true },
+  });
+  if (!account) return;
+
+  // Dynamic import to avoid circular dependency with google-account-token
+  const { getGoogleAccessTokenForUser } = await import("@/lib/google-account-token");
+  const token = await getGoogleAccessTokenForUser(account.userId);
+  if (!token) return;
+
+  const driveFolders = await listDriveListingFolders(token, driveCfg.rootFolderId);
+  if (!driveFolders.length) return;
+
+  const cached = await prisma.cachedListing.findMany({
+    where: { tenantId },
+    select: { id: true, hubspotId: true, address: true, shortAddress: true, driveFolderId: true },
+  });
+
+  log("Step 4: Auto-linking Drive folders", { listings: cached.length, folders: driveFolders.length });
+  await autoLinkDriveFolders(cached, driveFolders);
 }
 
 function log(label: string, data?: unknown) {

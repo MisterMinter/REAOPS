@@ -6,7 +6,7 @@ import { type DriveFolderRef, listDriveListingFolders } from "@/lib/drive";
 import { getGoogleAccessTokenForUser } from "@/lib/google-account-token";
 import type { ListingFacts } from "@/lib/marketing-generate";
 import { getOnboardingSnapshot } from "@/lib/onboarding";
-import { buildMarketingListingRows } from "@/lib/marketing-listings";
+import { autoLinkDriveFolders, buildMarketingListingRows } from "@/lib/marketing-listings";
 import { prisma } from "@/lib/prisma";
 
 function driveOnlyFacts(title: string): ListingFacts {
@@ -144,6 +144,10 @@ export default async function MarketingPage() {
     driveListError =
       "No usable Google token for Drive (missing refresh token or refresh failed). Sign out, sign in again with the same Google account. First-time consent must include offline access so a refresh token is stored.";
   }
+
+  // Auto-link Drive folders to Zillow/CRM listings by fuzzy address match
+  // (persists driveFolderId so duplicates are merged on next load too)
+  await autoLinkDriveFolders(cachedSlices, driveFolders);
 
   const rows = buildMarketingListingRows(cachedSlices, driveFolders);
 
