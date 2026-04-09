@@ -15,6 +15,7 @@ import { bufferTools } from "@/agent/skills/buffer";
 import { calendarTools } from "@/agent/skills/calendar";
 import { followupTools } from "@/agent/skills/followup";
 import { analysisTools } from "@/agent/skills/analysis";
+import { flyerTools } from "@/agent/skills/flyer";
 
 export type AgentInput = {
   userId: string;
@@ -65,6 +66,7 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
     ...calendarTools(toolCtx),
     ...followupTools(toolCtx),
     ...analysisTools(toolCtx),
+    ...flyerTools(toolCtx),
   };
 
   const providersToTry = [primary, ...fallbackProviders(primary)];

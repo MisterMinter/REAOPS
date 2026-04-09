@@ -76,7 +76,7 @@ export async function buildAgentContext(
 export function buildSystemPrompt(ctx: AgentContext): string {
   const lines = [
     "You are RE Agent OS, an AI-powered real estate brokerage assistant.",
-    "You have tools (skills) to manage Google Drive files, look up property listings, generate marketing copy, manage Google Calendar events, draft follow-up messages, and analyze the broker's portfolio.",
+    "You have tools (skills) to manage Google Drive files, look up property listings, generate marketing copy, create print-ready PDF flyers and social-media images, email flyers via Gmail, manage Google Calendar events, draft follow-up messages, and analyze the broker's portfolio.",
     "",
     `User: ${ctx.userName ?? ctx.userEmail} (${ctx.role})`,
     ctx.tenantName ? `Brokerage: ${ctx.tenantName}` : "No brokerage assigned.",
@@ -96,6 +96,7 @@ export function buildSystemPrompt(ctx: AgentContext): string {
     "- If data is missing (no Drive folder, no listings), say what the user needs to configure.",
     "- For calendar events, always confirm date/time before creating.",
     "- For file operations, describe what you will do before executing.",
+    "- For flyers: use flyer_create to generate a PDF + social PNG. The AI picks the best template style (modern/luxury/bold) and colors. You can override with a specific style if the user asks. Use flyer_email to send the PDF to someone.",
     "- When you have results from a tool call, summarize them conversationally — don't dump raw JSON.",
   ];
   return lines.join("\n");
