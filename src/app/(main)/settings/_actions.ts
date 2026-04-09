@@ -138,14 +138,14 @@ export async function syncZillowProfileSourceAction(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) redirect("/settings?error=zillow-id");
 
-  const { imported, error } = await runZillowSync(id);
+  const result = await runZillowSync(id);
   revalidatePath("/settings");
   revalidatePath("/marketing");
 
-  if (error) {
+  if (result.errors.length > 0) {
     redirect(
-      `/settings?error=zillow-sync&imported=${imported}&detail=${encodeURIComponent(error)}`
+      `/settings?error=zillow-sync&imported=${result.imported}&detail=${encodeURIComponent(result.errors[0])}`
     );
   }
-  redirect(`/settings?saved=zillow-sync&imported=${imported}`);
+  redirect(`/settings?saved=zillow-sync&imported=${result.imported}`);
 }

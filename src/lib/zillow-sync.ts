@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import {
   scrapeZillowProfile,
-  scrapeZillowListingDetail,
+  batchScrapeListingDetails,
   fetchZillowProfileHtml,
   parseZillowListingHints,
   type ZillowProfileListing,
@@ -22,33 +22,47 @@ function shortAddr(full: string): string {
 export type SyncResult = {
   imported: number;
   detailed: number;
-  error?: string;
+  errors: string[];
+  durationMs: number;
 };
 
 /**
  * Sync a Zillow profile source using Firecrawl structured extract.
  * 1. Scrape profile page → get active + sold + rental listings with basic info
  * 2. Upsert each listing into CachedListing with profile-level data
- * 3. For active listings, scrape individual listing pages for rich detail
+ * 3. Batch-scrape all active listing pages for rich detail (concurrent)
  */
 export async function syncZillowProfileSource(sourceId: string): Promise<SyncResult> {
+  const t0 = Date.now();
   const src = await prisma.zillowProfileSource.findUnique({ where: { id: sourceId } });
-  if (!src) return { imported: 0, detailed: 0, error: "not_found" };
+  if (!src) return { imported: 0, detailed: 0, errors: ["Source not found"], durationMs: 0 };
+
+  log("=== SYNC START ===", { sourceId, url: src.profileUrl });
 
   const useFirecrawl = Boolean(process.env.FIRECRAWL_API_KEY?.trim());
 
   try {
-    if (useFirecrawl) {
-      return await syncViaFirecrawl(src.id, src.tenantId, src.profileUrl);
-    }
-    return await syncViaHtmlFallback(src.id, src.tenantId, src.profileUrl);
+    const result = useFirecrawl
+      ? await syncViaFirecrawl(src.id, src.tenantId, src.profileUrl)
+      : await syncViaHtmlFallback(src.id, src.tenantId, src.profileUrl);
+
+    result.durationMs = Date.now() - t0;
+    log("=== SYNC COMPLETE ===", {
+      sourceId,
+      imported: result.imported,
+      detailed: result.detailed,
+      errors: result.errors.length,
+      durationMs: result.durationMs,
+    });
+    return result;
   } catch (e) {
     const msg = e instanceof Error ? e.message : "sync failed";
+    log("=== SYNC FAILED ===", { sourceId, error: msg });
     await prisma.zillowProfileSource.update({
       where: { id: sourceId },
       data: { lastSyncError: msg },
     });
-    return { imported: 0, detailed: 0, error: msg };
+    return { imported: 0, detailed: 0, errors: [msg], durationMs: Date.now() - t0 };
   }
 }
 
@@ -57,6 +71,10 @@ async function syncViaFirecrawl(
   tenantId: string,
   profileUrl: string
 ): Promise<SyncResult> {
+  const errors: string[] = [];
+
+  // Step 1: Scrape profile page
+  log("Step 1: Scraping profile page");
   const profile = await scrapeZillowProfile(profileUrl);
   const now = new Date();
 
@@ -66,23 +84,60 @@ async function syncViaFirecrawl(
     ...profile.rentals,
   ];
 
+  log("Profile scraped", {
+    agent: profile.agentName,
+    active: profile.activeListings.length,
+    sold: profile.soldListings.length,
+    rentals: profile.rentals.length,
+  });
+
+  // Step 2: Upsert all listings from profile
+  log("Step 2: Upserting listings from profile", { count: allListings.length });
   for (const listing of allListings) {
-    await upsertFromProfile(tenantId, listing, profileUrl, now);
+    try {
+      await upsertFromProfile(tenantId, listing, profileUrl, now);
+    } catch (e) {
+      const msg = `Upsert failed for ${listing.address}: ${e instanceof Error ? e.message : e}`;
+      log("Upsert error", msg);
+      errors.push(msg);
+    }
   }
 
+  // Step 3: Batch-scrape active listing details
+  const activeUrls = profile.activeListings
+    .map((l) => l.listingUrl)
+    .filter(Boolean);
+
   let detailed = 0;
-  for (const listing of profile.activeListings) {
-    if (!listing.listingUrl) continue;
+  if (activeUrls.length > 0) {
+    log("Step 3: Batch-scraping listing details", { count: activeUrls.length });
     try {
-      const detail = await scrapeZillowListingDetail(listing.listingUrl);
-      await enrichWithDetail(tenantId, listing.zpid, detail, now);
-      detailed++;
+      const detailMap = await batchScrapeListingDetails(activeUrls);
+
+      for (const listing of profile.activeListings) {
+        if (!listing.listingUrl) continue;
+        const detail = detailMap.get(listing.listingUrl);
+        if (!detail) {
+          errors.push(`No detail data for ${listing.address}`);
+          continue;
+        }
+        try {
+          await enrichWithDetail(tenantId, listing.zpid, detail, now);
+          detailed++;
+          log("Enriched listing", { address: detail.address || listing.address, zpid: listing.zpid });
+        } catch (e) {
+          const msg = `Enrich failed for ${listing.address}: ${e instanceof Error ? e.message : e}`;
+          log("Enrich error", msg);
+          errors.push(msg);
+        }
+      }
     } catch (e) {
-      console.warn(
-        `Detail scrape failed for ${listing.address}:`,
-        e instanceof Error ? e.message : e
-      );
+      const msg = `Batch detail scrape failed: ${e instanceof Error ? e.message : e}`;
+      log("Batch error", msg);
+      errors.push(msg);
     }
+  } else {
+    log("Step 3: Skipped (no active listing URLs)");
   }
 
   await prisma.zillowProfileSource.update({
@@ -90,12 +145,12 @@ async function syncViaFirecrawl(
     data: {
       lastSyncedAt: now,
       lastSyncError: allListings.length
-        ? null
+        ? (errors.length ? errors.slice(0, 3).join("; ") : null)
         : "No listings found on profile page.",
     },
   });
 
-  return { imported: allListings.length, detailed };
+  return { imported: allListings.length, detailed, errors, durationMs: 0 };
 }
 
 async function upsertFromProfile(
@@ -239,56 +294,62 @@ async function syncViaHtmlFallback(
   tenantId: string,
   profileUrl: string
 ): Promise<SyncResult> {
+  log("Using HTML fallback (no FIRECRAWL_API_KEY)");
   const html = await fetchZillowProfileHtml(profileUrl);
   const hints = parseZillowListingHints(html);
   const now = new Date();
+  const errors: string[] = [];
 
   for (const h of hints) {
     const hubspotId = `zillow:${h.zpid}`;
     const addr = h.addressGuess.slice(0, 500);
     const short = addr.slice(0, 120);
 
-    await prisma.cachedListing.upsert({
-      where: { tenantId_hubspotId: { tenantId, hubspotId } },
-      create: {
-        tenantId,
-        hubspotId,
-        address: addr,
-        shortAddress: short,
-        city: "",
-        state: "",
-        zip: null,
-        beds: null,
-        baths: null,
-        sqft: null,
-        price: null,
-        priceDisplay: "—",
-        status: "ZILLOW",
-        daysOnMarket: null,
-        features: null,
-        notes: null,
-        mlsNumber: null,
-        driveFolderId: null,
-        rawData: {
-          source: "zillow",
-          listingUrl: h.listingUrl,
-          zpid: h.zpid,
-          profileUrl,
+    try {
+      await prisma.cachedListing.upsert({
+        where: { tenantId_hubspotId: { tenantId, hubspotId } },
+        create: {
+          tenantId,
+          hubspotId,
+          address: addr,
+          shortAddress: short,
+          city: "",
+          state: "",
+          zip: null,
+          beds: null,
+          baths: null,
+          sqft: null,
+          price: null,
+          priceDisplay: "—",
+          status: "ZILLOW",
+          daysOnMarket: null,
+          features: null,
+          notes: null,
+          mlsNumber: null,
+          driveFolderId: null,
+          rawData: {
+            source: "zillow",
+            listingUrl: h.listingUrl,
+            zpid: h.zpid,
+            profileUrl,
+          },
+          lastSyncedAt: now,
         },
-        lastSyncedAt: now,
-      },
-      update: {
-        address: addr,
-        shortAddress: short,
-        rawData: {
-          source: "zillow",
-          listingUrl: h.listingUrl,
-          zpid: h.zpid,
-          profileUrl,
+        update: {
+          address: addr,
+          shortAddress: short,
+          rawData: {
+            source: "zillow",
+            listingUrl: h.listingUrl,
+            zpid: h.zpid,
+            profileUrl,
+          },
+          lastSyncedAt: now,
         },
-        lastSyncedAt: now,
-      },
-    });
+      });
+    } catch (e) {
+      errors.push(`Upsert ${h.zpid}: ${e instanceof Error ? e.message : e}`);
+    }
   }
 
   await prisma.zillowProfileSource.update({
@@ -301,5 +362,14 @@ async function syncViaHtmlFallback(
     },
   });
 
-  return { imported: hints.length, detailed: 0 };
+  return { imported: hints.length, detailed: 0, errors, durationMs: 0 };
+}
+
+function log(label: string, data?: unknown) {
+  const ts = new Date().toISOString();
+  if (data !== undefined) {
+    console.log(`[zillow-sync ${ts}] ${label}`, typeof data === "string" ? data : JSON.stringify(data));
+  } else {
+    console.log(`[zillow-sync ${ts}] ${label}`);
+  }
 }

@@ -11,7 +11,7 @@ export function zillowTools(_ctx: ToolContext) {
   return {
     zillow_scrape_profile: tool({
       description:
-        "Scrape a Zillow agent/broker profile page to get their active listings, sold listings, rentals, and contact info. Requires FIRECRAWL_API_KEY.",
+        "Scrape a Zillow agent/broker profile page to get their active listings, sold listings, rentals, and contact info. Uses Firecrawl v2 with structured JSON extraction.",
       parameters: z.object({
         url: z.string().url().describe("Zillow profile URL (e.g. https://www.zillow.com/profile/username)."),
       }),
@@ -38,14 +38,13 @@ export function zillowTools(_ctx: ToolContext) {
 
     zillow_scrape_listing: tool({
       description:
-        "Scrape a single Zillow listing page for full property details: description, photos, features, schools, tax info, walk score, etc. Requires FIRECRAWL_API_KEY.",
+        "Scrape a single Zillow listing page for full property details: description, photos, features, schools, tax info, walk score, etc. Uses Firecrawl v2 with split schema extraction (basic facts + features + neighborhood in parallel).",
       parameters: z.object({
         url: z.string().url().describe("Full Zillow listing URL (homedetails page)."),
       }),
       execute: async ({ url }) => {
         try {
-          const detail = await scrapeZillowListingDetail(url);
-          return detail;
+          return await scrapeZillowListingDetail(url);
         } catch (e) {
           return { error: e instanceof Error ? e.message : "Listing scrape failed." };
         }
@@ -54,13 +53,12 @@ export function zillowTools(_ctx: ToolContext) {
 
     zillow_sync_profile: tool({
       description:
-        "Sync a saved Zillow profile source into cached listings. Scrapes the profile, imports all listings, then scrapes each active listing for full details.",
+        "Sync a saved Zillow profile source into cached listings. Scrapes the profile, batch-scrapes all active listing details concurrently, and stores everything in the database. Returns import count, detail count, errors, and duration.",
       parameters: z.object({
         profileSourceId: z.string().describe("The ZillowProfileSource ID from Settings."),
       }),
       execute: async ({ profileSourceId }) => {
-        const result = await syncZillowProfileSource(profileSourceId);
-        return result;
+        return await syncZillowProfileSource(profileSourceId);
       },
     }),
   };
