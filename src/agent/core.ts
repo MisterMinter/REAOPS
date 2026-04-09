@@ -1,6 +1,10 @@
 import { generateText } from "ai";
 import type { CoreMessage } from "ai";
-import { resolveLanguageModel } from "@/lib/ai-chat";
+import {
+  resolveAiProvider,
+  fallbackProviders,
+  getLanguageModel,
+} from "@/lib/ai-chat";
 import { prisma } from "@/lib/prisma";
 import { buildAgentContext, buildSystemPrompt } from "@/agent/system-prompt";
 import { driveTools } from "@/agent/skills/drive";
@@ -26,11 +30,11 @@ export type AgentResult = {
 };
 
 export async function runAgent(input: AgentInput): Promise<AgentResult> {
-  const model = resolveLanguageModel(input.provider);
-  if (!model) {
+  const primary = resolveAiProvider(input.provider);
+  if (!primary) {
     return {
       responseText:
-        "No AI API key configured. Set GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY on the server.",
+        "No AI API key configured. Set ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENAI_API_KEY on the server.",
       messages: input.messages,
       chatSessionId: input.chatSessionId ?? "",
     };
@@ -61,30 +65,52 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
     ...analysisTools(toolCtx),
   };
 
-  const result = await generateText({
-    model,
-    system,
-    messages: input.messages,
-    tools: allTools,
-    maxSteps: 12,
-  });
+  const providersToTry = [primary, ...fallbackProviders(primary)];
+  let lastError: unknown;
 
-  const allMessages: CoreMessage[] = [
-    ...input.messages,
-    ...result.response.messages,
-  ];
+  for (const providerName of providersToTry) {
+    try {
+      const model = getLanguageModel(providerName);
+      const result = await generateText({
+        model,
+        system,
+        messages: input.messages,
+        tools: allTools,
+        maxSteps: 12,
+      });
 
-  const sessionId = await persistConversation(
-    input.userId,
-    input.chatSessionId,
-    allMessages
-  );
+      const allMessages: CoreMessage[] = [
+        ...input.messages,
+        ...result.response.messages,
+      ];
 
-  return {
-    responseText: result.text,
-    messages: allMessages,
-    chatSessionId: sessionId,
-  };
+      const sessionId = await persistConversation(
+        input.userId,
+        input.chatSessionId,
+        allMessages
+      );
+
+      return {
+        responseText: result.text,
+        messages: allMessages,
+        chatSessionId: sessionId,
+      };
+    } catch (e) {
+      lastError = e;
+      const msg = e instanceof Error ? e.message : "";
+      const isRetryable =
+        msg.includes("429") ||
+        msg.includes("rate") ||
+        msg.includes("quota") ||
+        msg.includes("exceeded") ||
+        msg.includes("overloaded") ||
+        msg.includes("503");
+      if (!isRetryable) throw e;
+      console.warn(`Provider ${providerName} failed (${msg.slice(0, 120)}), trying next...`);
+    }
+  }
+
+  throw lastError;
 }
 
 async function getAccessToken(userId: string): Promise<string | null> {

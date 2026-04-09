@@ -13,20 +13,29 @@ export function availableAiProviders(): Record<AiProviderName, boolean> {
   };
 }
 
+const DEFAULT_ORDER: AiProviderName[] = ["anthropic", "gemini", "openai"];
+
+export function providerPriority(): AiProviderName[] {
+  const raw = process.env.AI_PROVIDER?.trim();
+  if (raw) {
+    return raw.split(",").map((s) => s.trim().toLowerCase() as AiProviderName);
+  }
+  return DEFAULT_ORDER;
+}
+
 export function defaultAiProvider(): AiProviderName | null {
   const avail = availableAiProviders();
-  const order = (process.env.AI_PROVIDER ?? "gemini,anthropic,openai")
-    .split(",")
-    .map((s) => s.trim().toLowerCase());
-
-  for (const raw of order) {
-    const p = raw as AiProviderName;
+  for (const p of providerPriority()) {
     if (avail[p]) return p;
   }
-  if (avail.gemini) return "gemini";
-  if (avail.anthropic) return "anthropic";
-  if (avail.openai) return "openai";
   return null;
+}
+
+export function fallbackProviders(after: AiProviderName): AiProviderName[] {
+  const avail = availableAiProviders();
+  const order = providerPriority();
+  const idx = order.indexOf(after);
+  return order.slice(idx + 1).filter((p) => avail[p]);
 }
 
 export function resolveAiProvider(requested?: string | null): AiProviderName | null {
