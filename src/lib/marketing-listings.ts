@@ -44,15 +44,22 @@ function rowSourceFromCached(c: CachedListingSlice): MarketingListingSource {
 }
 
 export function mergedListingCount(
-  cached: { driveFolderId: string | null }[],
+  cached: { address?: string; shortAddress?: string; driveFolderId: string | null }[],
   driveFolders: { id: string }[] | null
 ): number {
-  if (!driveFolders?.length) return cached.length;
+  const baseAddresses = new Set<string>();
+  for (const c of cached) {
+    const base = normalizeAddress((c as CachedListingSlice).shortAddress || (c as CachedListingSlice).address || "");
+    baseAddresses.add(base || c.driveFolderId || Math.random().toString());
+  }
+  const groupedCachedCount = baseAddresses.size;
+
+  if (!driveFolders?.length) return groupedCachedCount;
   const linked = new Set(
     cached.map((c) => c.driveFolderId).filter((id): id is string => Boolean(id))
   );
   const driveOnly = driveFolders.filter((f) => !linked.has(f.id)).length;
-  return cached.length + driveOnly;
+  return groupedCachedCount + driveOnly;
 }
 
 /**
@@ -153,15 +160,20 @@ export function buildMarketingListingRows(
   const rows: MarketingListingRow[] = [];
   const linkedDriveIds = new Set<string>();
 
-  for (const c of cached) {
-    if (c.driveFolderId) linkedDriveIds.add(c.driveFolderId);
+  const groups = groupByBaseAddress(cached);
+
+  for (const group of groups) {
+    const primary = group[0];
+    const driveFolderId = group.find((c) => c.driveFolderId)?.driveFolderId ?? null;
+    if (driveFolderId) linkedDriveIds.add(driveFolderId);
+
     rows.push({
-      key: `hs:${c.id}`,
-      title: (c.shortAddress || c.address).trim() || "Listing",
-      source: rowSourceFromCached(c),
-      driveFolderId: c.driveFolderId,
-      hubspotId: c.hubspotId,
-      cachedListingId: c.id,
+      key: `hs:${primary.id}`,
+      title: (primary.shortAddress || primary.address).trim() || "Listing",
+      source: rowSourceFromCached({ ...primary, driveFolderId }),
+      driveFolderId,
+      hubspotId: primary.hubspotId,
+      cachedListingId: primary.id,
     });
   }
 
@@ -179,6 +191,49 @@ export function buildMarketingListingRows(
 
   rows.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
   return rows;
+}
+
+/**
+ * Group CachedListings that share the same base address (after stripping
+ * unit designators like #A, #B). Within each group, the entry WITHOUT a
+ * unit suffix comes first (it's the "primary"), falling back to the entry
+ * with the most data fields populated.
+ */
+function groupByBaseAddress(cached: CachedListingSlice[]): CachedListingSlice[][] {
+  const map = new Map<string, CachedListingSlice[]>();
+
+  for (const c of cached) {
+    const base = normalizeAddress(c.shortAddress || c.address);
+    if (!base) {
+      map.set(c.id, [c]);
+      continue;
+    }
+    const existing = map.get(base);
+    if (existing) {
+      existing.push(c);
+    } else {
+      map.set(base, [c]);
+    }
+  }
+
+  for (const group of map.values()) {
+    if (group.length > 1) {
+      group.sort((a, b) => {
+        const aHasUnit = hasUnitSuffix(a.shortAddress || a.address);
+        const bHasUnit = hasUnitSuffix(b.shortAddress || b.address);
+        if (aHasUnit !== bHasUnit) return aHasUnit ? 1 : -1;
+        return a.address.length - b.address.length;
+      });
+    }
+  }
+
+  return Array.from(map.values());
+}
+
+const UNIT_SUFFIX_RE = /#\s*\w+|\b(apt|unit|suite|ste)\b\s*\S+/i;
+
+function hasUnitSuffix(addr: string): boolean {
+  return UNIT_SUFFIX_RE.test(addr);
 }
 
 // ---------------------------------------------------------------------------
