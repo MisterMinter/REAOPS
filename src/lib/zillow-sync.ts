@@ -26,13 +26,27 @@ export type SyncResult = {
   durationMs: number;
 };
 
+const activeSyncs = new Set<string>();
+
 /**
  * Sync a Zillow profile source using Firecrawl structured extract.
- * 1. Scrape profile page → get active + sold + rental listings with basic info
- * 2. Upsert each listing into CachedListing with profile-level data
- * 3. Batch-scrape all active listing pages for rich detail (concurrent)
+ * Prevents concurrent syncs of the same source.
  */
 export async function syncZillowProfileSource(sourceId: string): Promise<SyncResult> {
+  if (activeSyncs.has(sourceId)) {
+    log("Sync already in progress, skipping duplicate", { sourceId });
+    return { imported: 0, detailed: 0, errors: ["Sync already in progress"], durationMs: 0 };
+  }
+
+  activeSyncs.add(sourceId);
+  try {
+    return await doSync(sourceId);
+  } finally {
+    activeSyncs.delete(sourceId);
+  }
+}
+
+async function doSync(sourceId: string): Promise<SyncResult> {
   const t0 = Date.now();
   const src = await prisma.zillowProfileSource.findUnique({ where: { id: sourceId } });
   if (!src) return { imported: 0, detailed: 0, errors: ["Source not found"], durationMs: 0 };

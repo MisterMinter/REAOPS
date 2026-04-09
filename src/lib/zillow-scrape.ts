@@ -549,21 +549,29 @@ async function pollBatchJob(
   maxWaitMs = 300_000
 ): Promise<Record<string, unknown>[]> {
   const start = Date.now();
-  let delay = 3000;
+  let delay = 5000;
+  let pollCount = 0;
 
   while (Date.now() - start < maxWaitMs) {
     await sleep(delay);
     const status = await fcGet(`/batch/scrape/${jobId}`);
     const state = status.status as string;
+    const completed = status.completed as number | undefined;
+    const total = status.total as number | undefined;
+    pollCount++;
 
     if (state === "completed") {
+      log("Batch complete", { jobId, pages: total, elapsed: Date.now() - start });
       return (status.data ?? []) as Record<string, unknown>[];
     }
     if (state === "failed") {
       throw new Error(`Batch job ${jobId} failed: ${status.error ?? "unknown"}`);
     }
 
-    log("Batch polling", { jobId, status: state, elapsed: Date.now() - start });
+    // Only log every 3rd poll to reduce noise
+    if (pollCount % 3 === 0) {
+      log("Batch polling", { jobId, status: state, progress: `${completed ?? "?"}/${total ?? "?"}`, elapsed: Date.now() - start });
+    }
     delay = Math.min(delay * 1.5, 15000);
   }
 
