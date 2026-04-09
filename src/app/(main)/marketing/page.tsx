@@ -209,7 +209,7 @@ export default async function MarketingPage() {
       <div className="mt-8 grid gap-4 lg:grid-cols-3">
         <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Properties</div>
-          <div className="mt-2 font-display text-3xl text-[var(--gold)]">{snap?.listingCount ?? rows.length}</div>
+          <div className="mt-2 font-display text-3xl text-[var(--gold)]">{rows.length}</div>
           <p className="mt-2 text-xs text-[var(--txt3)]">Drive folders + CRM / Zillow rows</p>
         </div>
         <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">

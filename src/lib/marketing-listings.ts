@@ -58,6 +58,11 @@ export function mergedListingCount(
 /**
  * Auto-link Drive folders to CachedListings by fuzzy address match.
  * Persists the link (sets driveFolderId) so future calls skip them.
+ *
+ * Handles multi-address folder names like "1321 Holden/1729 Verdery" by
+ * splitting on "/" and matching each sub-address independently. Multiple
+ * listings can share one Drive folder (the folder represents a combined
+ * property package).
  */
 export async function autoLinkDriveFolders(
   cached: CachedListingSlice[],
@@ -65,50 +70,52 @@ export async function autoLinkDriveFolders(
 ): Promise<CachedListingSlice[]> {
   if (!driveFolders.length) return cached;
 
-  const linkedIds = new Set(
-    cached.map((c) => c.driveFolderId).filter((id): id is string => Boolean(id))
-  );
-
   const unlinkedCached = cached.filter((c) => !c.driveFolderId);
-  const unlinkedFolders = driveFolders.filter((f) => !linkedIds.has(f.id) && f.name);
+  const availableFolders = driveFolders.filter((f) => f.name);
 
-  if (!unlinkedCached.length || !unlinkedFolders.length) return cached;
+  if (!unlinkedCached.length || !availableFolders.length) return cached;
+
+  const folderSubAddresses = new Map<string, { folder: DriveFolderSlice; parts: string[] }>();
+  for (const folder of availableFolders) {
+    const raw = folder.name ?? "";
+    const parts = splitFolderName(raw)
+      .map(normalizeAddress)
+      .filter(Boolean);
+    if (parts.length > 0) {
+      folderSubAddresses.set(folder.id, { folder, parts });
+    }
+  }
 
   const updates: { listingId: string; folderId: string }[] = [];
-  const usedFolderIds = new Set<string>();
 
   for (const listing of unlinkedCached) {
     const listingNorm = normalizeAddress(listing.address);
     const shortNorm = normalizeAddress(listing.shortAddress);
     if (!listingNorm && !shortNorm) continue;
 
-    let bestMatch: DriveFolderSlice | null = null;
+    let bestFolderId: string | null = null;
     let bestScore = 0;
 
-    for (const folder of unlinkedFolders) {
-      if (usedFolderIds.has(folder.id)) continue;
-      const folderNorm = normalizeAddress(folder.name ?? "");
-      if (!folderNorm) continue;
-
-      const score = Math.max(
-        addressSimilarity(listingNorm, folderNorm),
-        addressSimilarity(shortNorm, folderNorm)
-      );
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestMatch = folder;
+    for (const [folderId, { parts }] of folderSubAddresses) {
+      for (const part of parts) {
+        const score = Math.max(
+          addressSimilarity(listingNorm, part),
+          addressSimilarity(shortNorm, part)
+        );
+        if (score > bestScore) {
+          bestScore = score;
+          bestFolderId = folderId;
+        }
       }
     }
 
-    if (bestMatch && bestScore >= 0.7) {
-      updates.push({ listingId: listing.id, folderId: bestMatch.id });
-      usedFolderIds.add(bestMatch.id);
+    if (bestFolderId && bestScore >= 0.7) {
+      updates.push({ listingId: listing.id, folderId: bestFolderId });
     }
   }
 
   if (updates.length > 0) {
-    console.log(`[marketing-listings] Auto-linking ${updates.length} Drive folder(s) to Zillow listings`);
+    console.log(`[marketing-listings] Auto-linking ${updates.length} Drive folder(s) to listings`);
     for (const { listingId, folderId } of updates) {
       try {
         await prisma.cachedListing.update({
@@ -124,6 +131,19 @@ export async function autoLinkDriveFolders(
   }
 
   return cached;
+}
+
+/**
+ * Split a Drive folder name that may contain multiple addresses separated
+ * by "/" or "&" or "and". e.g. "1321 Holden/1729 Verdery" → ["1321 Holden", "1729 Verdery"]
+ * Returns at least one part (the full string) if no separators are found.
+ */
+function splitFolderName(name: string): string[] {
+  const parts = name
+    .split(/[/&]|\band\b/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : [name];
 }
 
 export function buildMarketingListingRows(
@@ -199,12 +219,14 @@ const STREET_SUFFIXES: Record<string, string> = {
 
 /**
  * Normalize an address string for comparison: lowercase, strip punctuation,
- * expand/collapse street suffix abbreviations, remove unit/apt qualifiers.
+ * expand/collapse street suffix abbreviations, remove unit/apt qualifiers
+ * and bare unit designators like #A, #B, #201.
  */
 function normalizeAddress(raw: string): string {
   return raw
     .toLowerCase()
-    .replace(/[.,#\-_/\\()]/g, " ")
+    .replace(/#\s*\w+/g, " ")
+    .replace(/[.,\-_/\\()]/g, " ")
     .replace(/\b(apt|unit|suite|ste|bldg|building|floor|fl)\b\s*\S*/gi, "")
     .replace(/\s+/g, " ")
     .trim()

@@ -2,6 +2,7 @@ import type { PrismaClient, UserRole } from "@prisma/client";
 import { listDriveListingFolders } from "@/lib/drive";
 import { getGoogleAccessTokenForUser } from "@/lib/google-account-token";
 import { mergedListingCount } from "@/lib/marketing-listings";
+import { prisma as globalPrisma } from "@/lib/prisma";
 
 export type OnboardingSnapshot = {
   role: UserRole;
@@ -81,6 +82,9 @@ export async function getOnboardingSnapshot(
       if (!driveToken && options?.googleAccessToken) {
         driveToken = options.googleAccessToken;
       }
+      if (!driveToken && input.tenantId) {
+        driveToken = await getAnyTenantDriveToken(input.tenantId, options?.googleTokenUserId);
+      }
       if (t.driveConfig && driveToken) {
         try {
           driveFolders = await listDriveListingFolders(driveToken, t.driveConfig.rootFolderId);
@@ -107,4 +111,26 @@ export async function getOnboardingSnapshot(
     contactCount,
     hasLogo,
   };
+}
+
+async function getAnyTenantDriveToken(
+  tenantId: string,
+  skipUserId?: string
+): Promise<string | null> {
+  const accounts = await globalPrisma.account.findMany({
+    where: {
+      provider: "google",
+      user: { tenantId },
+      refresh_token: { not: null },
+      ...(skipUserId ? { NOT: { userId: skipUserId } } : {}),
+    },
+    select: { userId: true },
+    take: 5,
+  });
+
+  for (const acct of accounts) {
+    const token = await getGoogleAccessTokenForUser(acct.userId);
+    if (token) return token;
+  }
+  return null;
 }
