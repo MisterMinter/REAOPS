@@ -469,17 +469,19 @@ export async function batchScrapeListingDetails(
     if (sourceUrl && json) basicByUrl.set(sourceUrl, json);
   }
 
-  // Second pass: features/financials/photos
+  // Second pass: features/financials/photos + raw image URLs
   let detailByUrl = new Map<string, Record<string, unknown>>();
+  const imagesByUrl = new Map<string, string[]>();
   try {
     const detailStart = await fcPost("/batch/scrape", {
       urls,
       formats: [
+        "images",
         {
           type: "json",
           schema: LISTING_DETAIL_SCHEMA,
           prompt:
-            "Extract all interior and exterior features, parking, HVAC, appliances, flooring, HOA fee, tax info, ALL photo URLs, virtual tour URL, listing agent, and brokerage name.",
+            "Extract all interior and exterior features, parking, HVAC, appliances, flooring, HOA fee, tax info, virtual tour URL, listing agent, and brokerage name.",
         },
       ],
       timeout: 120000,
@@ -494,8 +496,10 @@ export async function batchScrapeListingDetails(
         const sourceUrl = str(meta?.sourceURL) ?? str(meta?.url) ?? "";
         const json = page.json as Record<string, unknown> | undefined;
         if (sourceUrl && json) detailByUrl.set(sourceUrl, json);
+        const rawImages = page.images as string[] | undefined;
+        if (sourceUrl && rawImages) imagesByUrl.set(sourceUrl, filterPropertyPhotos(rawImages));
       }
-      log("Batch detail pass complete", { pages: detailByUrl.size });
+      log("Batch detail pass complete", { pages: detailByUrl.size, pagesWithImages: imagesByUrl.size });
     }
   } catch (e) {
     log("Detail batch failed (non-fatal)", e instanceof Error ? e.message : e);
@@ -538,7 +542,8 @@ export async function batchScrapeListingDetails(
     const basic = basicByUrl.get(url) ?? {};
     const detail = detailByUrl.get(url) ?? {};
     const nh = neighborhoodByUrl.get(url) ?? {};
-    results.set(url, mergeToDetail(basic, detail, nh));
+    const imgs = imagesByUrl.get(url) ?? [];
+    results.set(url, mergeToDetail(basic, detail, nh, imgs));
   }
 
   return results;
@@ -594,8 +599,13 @@ async function sequentialFallback(urls: string[]): Promise<BatchDetailResult> {
 function mergeToDetail(
   basic: Record<string, unknown>,
   detail: Record<string, unknown>,
-  neighborhood: Record<string, unknown>
+  neighborhood: Record<string, unknown>,
+  extractedImages: string[] = []
 ): ZillowListingDetail {
+  // Merge images from the "images" format with any the LLM found in JSON extraction
+  const jsonPhotos = strArr(detail.photoUrls);
+  const allPhotos = dedupeStrings([...extractedImages, ...jsonPhotos]);
+
   return {
     address: str(basic.address) ?? "",
     city: str(basic.city) ?? "",
@@ -633,7 +643,7 @@ function mergeToDetail(
           grades: str(s.grades) ?? "",
         }))
       : [],
-    photoUrls: strArr(detail.photoUrls),
+    photoUrls: allPhotos,
     virtualTourUrl: str(detail.virtualTourUrl),
     listingAgent: str(detail.listingAgent),
     listingBrokerage: str(detail.listingBrokerage),
@@ -652,7 +662,7 @@ export async function scrapeZillowListingDetail(listingUrl: string): Promise<Zil
 
   log("Scraping single listing detail", url);
 
-  // Two-pass: basic + details in parallel
+  // Two-pass: basic + details (with images) in parallel
   const [basicResult, detailResult] = await Promise.all([
     fcPost("/scrape", {
       url,
@@ -670,11 +680,12 @@ export async function scrapeZillowListingDetail(listingUrl: string): Promise<Zil
     fcPost("/scrape", {
       url,
       formats: [
+        "images",
         {
           type: "json",
           schema: LISTING_DETAIL_SCHEMA,
           prompt:
-            "Extract all interior and exterior features, parking, HVAC, appliances, flooring, HOA fee, tax info, ALL photo URLs, virtual tour URL, listing agent, and brokerage name.",
+            "Extract all interior and exterior features, parking, HVAC, appliances, flooring, HOA fee, tax info, virtual tour URL, listing agent, and brokerage name.",
         },
       ],
       timeout: 120000,
@@ -705,10 +716,16 @@ export async function scrapeZillowListingDetail(listingUrl: string): Promise<Zil
 
   const basic = (basicResult.json ?? {}) as Record<string, unknown>;
   const detail = (detailResult.json ?? {}) as Record<string, unknown>;
+  const rawImages = detailResult.images as string[] | undefined;
+  const extractedImages = rawImages ? filterPropertyPhotos(rawImages) : [];
 
-  log("Single listing scrape complete", { address: str(basic.address), price: str(basic.price) });
+  log("Single listing scrape complete", {
+    address: str(basic.address),
+    price: str(basic.price),
+    photos: extractedImages.length,
+  });
 
-  return mergeToDetail(basic, detail, nhData);
+  return mergeToDetail(basic, detail, nhData, extractedImages);
 }
 
 // ---------------------------------------------------------------------------
@@ -846,6 +863,40 @@ function normalizeListings(raw: unknown, defaultStatus: string): ZillowProfileLi
       listingUrl: str(item.listingUrl) ?? "",
       thumbnailUrl: str(item.thumbnailUrl),
     }));
+}
+
+/**
+ * Filter raw image URLs from a Zillow page to only property photos.
+ * Zillow property photos are hosted on photos.zillowstatic.com
+ * and typically contain /p_e/ or /p_f/ (different size variants).
+ */
+function filterPropertyPhotos(urls: string[]): string[] {
+  return urls.filter((u) => {
+    if (!u.startsWith("http")) return false;
+    try {
+      const parsed = new URL(u);
+      const host = parsed.hostname;
+      // Zillow property photos live on zillowstatic.com
+      if (host.includes("zillowstatic.com")) {
+        // Skip tiny icons, logos, and UI assets (usually < 100px or in /static/)
+        if (parsed.pathname.includes("/static/")) return false;
+        if (parsed.pathname.includes("/logos/")) return false;
+        if (parsed.pathname.includes("/profile")) return false;
+        // Property photos have paths like /p_e/, /p_f/, /p_h/ for different sizes
+        // or are in /photos/ paths. Keep anything that looks like a property image.
+        return true;
+      }
+      // Also keep photos from other CDNs that Zillow uses (e.g. maps, street view)
+      if (host.includes("googleapis.com") && parsed.pathname.includes("streetview")) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function dedupeStrings(arr: string[]): string[] {
+  return [...new Set(arr)];
 }
 
 function sleep(ms: number): Promise<void> {
