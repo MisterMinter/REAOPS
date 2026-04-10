@@ -191,6 +191,7 @@ export default async function MarketingPage() {
       title: row.title,
       source: row.source,
       driveFolderId: row.driveFolderId,
+      cachedListingId: row.cachedListingId,
       facts: cached ? factsFromCached(cached) : driveOnlyFacts(row.title),
     };
   });

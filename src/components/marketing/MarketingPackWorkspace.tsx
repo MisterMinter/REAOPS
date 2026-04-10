@@ -13,6 +13,7 @@ export type MarketingWorkspaceRow = {
   title: string;
   source: MarketingListingSource;
   driveFolderId: string | null;
+  cachedListingId: string | null;
   facts: ListingFacts;
 };
 
@@ -158,6 +159,20 @@ export function MarketingPackWorkspace({
   const [emailSubjects, setEmailSubjects] = useState("");
   const [cardBlurb, setCardBlurb] = useState("");
 
+  const [flyerBusy, setFlyerBusy] = useState(false);
+  const [flyerResult, setFlyerResult] = useState<{
+    success?: boolean;
+    headline?: string;
+    templateStyle?: string;
+    pdfDriveUrl?: string | null;
+    pngDriveUrl?: string | null;
+    savedToDrive?: boolean;
+    emailSent?: boolean;
+    emailTo?: string;
+    emailError?: string;
+    error?: string;
+  } | null>(null);
+
   const runGenerate = useCallback(async () => {
     if (!aiReady || !selected) return;
     setGenerating(true);
@@ -222,6 +237,43 @@ export function MarketingPackWorkspace({
       setGenerating(false);
     }
   }, [aiReady, selected, draftFacts, defaultTone, hero, provider]);
+
+  const runFlyer = useCallback(
+    async (action: "create" | "email") => {
+      if (!selected) return;
+      setFlyerBusy(true);
+      setFlyerResult(null);
+      try {
+        const payload: Record<string, unknown> = {
+          action,
+          driveFolderId: selected.driveFolderId,
+          address: draftFacts.address,
+          city: draftFacts.city,
+          state: draftFacts.state,
+          zip: draftFacts.zip,
+          beds: draftFacts.beds,
+          baths: draftFacts.baths,
+          sqft: draftFacts.sqft,
+          priceDisplay: draftFacts.priceDisplay,
+          features: draftFacts.features,
+        };
+        if (selected.cachedListingId) payload.listingId = selected.cachedListingId;
+
+        const res = await fetch("/api/flyer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        setFlyerResult(json);
+      } catch (e) {
+        setFlyerResult({ error: e instanceof Error ? e.message : "Request failed" });
+      } finally {
+        setFlyerBusy(false);
+      }
+    },
+    [selected, draftFacts]
+  );
 
   if (listings.length === 0) {
     return (
@@ -501,13 +553,82 @@ export function MarketingPackWorkspace({
           </div>
         </div>
 
-        <button
-          type="button"
-          disabled
-          className="w-full rounded-md border border-dashed border-[var(--border2)] py-3 text-sm text-[var(--txt3)]"
-        >
-          Push to Buffer — coming soon
-        </button>
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
+          <h3 className="font-display text-lg text-[var(--gold)]">Property flyer</h3>
+          <p className="mt-1 text-xs text-[var(--txt3)]">
+            AI generates copy and picks a style. PDF + PNG are saved to the Drive folder if linked.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              disabled={flyerBusy || !selected}
+              onClick={() => void runFlyer("create")}
+              className="rounded-md bg-[var(--gold)] px-5 py-2 text-sm font-semibold text-[var(--bg)] disabled:opacity-50"
+            >
+              {flyerBusy ? "Creating…" : "Create flyer"}
+            </button>
+            <button
+              type="button"
+              disabled={flyerBusy || !selected}
+              onClick={() => void runFlyer("email")}
+              className="rounded-md border border-[var(--gold)] px-5 py-2 text-sm font-semibold text-[var(--gold)] disabled:opacity-50"
+            >
+              {flyerBusy ? "Sending…" : "Create & email flyer"}
+            </button>
+          </div>
+          {flyerResult && (
+            <div className="mt-4 space-y-2 text-sm">
+              {flyerResult.error && (
+                <p className="text-[var(--coral)]">{flyerResult.error}</p>
+              )}
+              {flyerResult.success && (
+                <>
+                  <p className="text-[var(--green)]">
+                    Flyer created — {flyerResult.templateStyle} style
+                    {flyerResult.headline ? `: "${flyerResult.headline}"` : ""}
+                  </p>
+                  {flyerResult.savedToDrive && (
+                    <div className="flex flex-wrap gap-3">
+                      {flyerResult.pdfDriveUrl && (
+                        <a
+                          href={flyerResult.pdfDriveUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[var(--teal)] hover:underline"
+                        >
+                          Open PDF in Drive
+                        </a>
+                      )}
+                      {flyerResult.pngDriveUrl && (
+                        <a
+                          href={flyerResult.pngDriveUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[var(--teal)] hover:underline"
+                        >
+                          Open PNG in Drive
+                        </a>
+                      )}
+                    </div>
+                  )}
+                  {!flyerResult.savedToDrive && (
+                    <p className="text-[var(--txt3)]">
+                      No Drive folder linked — flyer was generated but not saved to Drive.
+                    </p>
+                  )}
+                  {flyerResult.emailSent && (
+                    <p className="text-[var(--green)]">
+                      Email sent to {flyerResult.emailTo}
+                    </p>
+                  )}
+                  {flyerResult.emailError && (
+                    <p className="text-[var(--coral)]">{flyerResult.emailError}</p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
