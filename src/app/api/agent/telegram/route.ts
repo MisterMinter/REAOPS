@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { handleTelegramMessage, truncateForTelegram } from "@/agent/telegram";
+import {
+  handleTelegramMessage,
+  sendTelegramMessages,
+  truncateForTelegram,
+} from "@/agent/telegram";
 
 export async function POST(req: Request) {
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -37,34 +41,7 @@ export async function POST(req: Request) {
   );
 
   const htmlBody = markdownToTelegramHtml(reply);
-  const sendResult = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: message.chat.id,
-      text: truncateForTelegram(htmlBody),
-      parse_mode: "HTML",
-    }),
-  });
-
-  if (!sendResult.ok) {
-    const errJson = await sendResult.json().catch(() => null);
-    const errDesc = (errJson as Record<string, unknown> | null)?.description ?? "";
-    const isParseError =
-      typeof errDesc === "string" &&
-      (errDesc.includes("can't parse") || errDesc.includes("Bad Request"));
-
-    if (isParseError) {
-      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: message.chat.id,
-          text: truncateForTelegram(reply),
-        }),
-      });
-    }
-  }
+  await sendTelegramMessages(botToken, message.chat.id, [htmlBody]);
 
   return NextResponse.json({ ok: true });
 }

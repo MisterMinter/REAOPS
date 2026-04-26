@@ -10,6 +10,72 @@ export function truncateForTelegram(text: string): string {
   return text.slice(0, MAX_TG_MESSAGE - 3) + "...";
 }
 
+/**
+ * Send one or more HTML messages to a Telegram chat.
+ * Falls back to plain text per message if HTML parsing fails.
+ */
+export async function sendTelegramMessages(
+  botToken: string,
+  chatId: number,
+  messages: string[],
+  options?: { topicId?: number }
+): Promise<void> {
+  for (const msg of messages) {
+    const payload: Record<string, unknown> = {
+      chat_id: chatId,
+      text: truncateForTelegram(msg),
+      parse_mode: "HTML",
+    };
+    if (options?.topicId) {
+      payload.message_thread_id = options.topicId;
+    }
+
+    const res = await fetch(
+      `https://api.telegram.org/bot${botToken}/sendMessage`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => null);
+      const desc =
+        (errJson as Record<string, unknown> | null)?.description ?? "";
+      const isParseError =
+        typeof desc === "string" &&
+        (desc.includes("can't parse") || desc.includes("Bad Request"));
+
+      if (isParseError) {
+        const stripped = msg
+          .replace(/<[^>]+>/g, "")
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">");
+        const fallback: Record<string, unknown> = {
+          chat_id: chatId,
+          text: truncateForTelegram(stripped),
+        };
+        if (options?.topicId) fallback.message_thread_id = options.topicId;
+        await fetch(
+          `https://api.telegram.org/bot${botToken}/sendMessage`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(fallback),
+          }
+        );
+      }
+    }
+
+    // Small delay between messages to avoid rate limits
+    if (messages.length > 1) {
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+}
+
 export async function handleTelegramMessage(
   telegramUserId: number,
   text: string,
