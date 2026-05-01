@@ -22,6 +22,26 @@ export type MarketingItem = {
   status: "done" | "in_progress" | "awaiting_photos";
 };
 
+export type FollowUpContact = {
+  name: string;
+  leadStatus: string | null;
+  daysSinceContact: number | null;
+};
+
+export type FollowUpReminder = {
+  time: string;
+  summary: string;
+};
+
+export type FollowUpData = {
+  totalContacts: number;
+  byStatus: Record<string, number>;
+  contactedLast7d: number;
+  staleContacts: FollowUpContact[];
+  todayReminders: FollowUpReminder[];
+  overdueDays: number | null;
+};
+
 export type DailyBriefData = {
   tenantName: string;
   date: string;
@@ -36,8 +56,7 @@ export type DailyBriefData = {
   showings: ShowingEvent[];
   calendarError: string | null;
 
-  contactCount: number;
-  recentContactCount: number;
+  followUp: FollowUpData;
 
   marketingItems: MarketingItem[];
 
@@ -183,13 +202,98 @@ export async function buildDailyBrief(
     calendarError = "No Google token available.";
   }
 
-  // --- Contacts (follow-up stub) ---
-  const contactCount = await prisma.cachedContact.count({ where: { tenantId } });
+  // --- Follow-up data ---
+  const contacts = await prisma.cachedContact.findMany({
+    where: { tenantId },
+    select: {
+      firstName: true,
+      lastName: true,
+      leadStatus: true,
+      lastContactDate: true,
+    },
+  });
+
   const sevenDaysAgo = new Date(now);
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const recentContactCount = await prisma.cachedContact.count({
-    where: { tenantId, lastContactDate: { gte: sevenDaysAgo } },
-  });
+
+  const byStatus: Record<string, number> = {};
+  const staleContacts: Array<{ name: string; leadStatus: string | null; daysSinceContact: number | null }> = [];
+  let contactedLast7d = 0;
+  let maxOverdue = 0;
+
+  for (const c of contacts) {
+    const status = c.leadStatus?.trim() || "Unknown";
+    byStatus[status] = (byStatus[status] ?? 0) + 1;
+
+    if (c.lastContactDate && c.lastContactDate >= sevenDaysAgo) {
+      contactedLast7d++;
+    }
+
+    const daysSince = c.lastContactDate
+      ? Math.floor((now.getTime() - c.lastContactDate.getTime()) / 86_400_000)
+      : null;
+
+    // Flag contacts not reached in 14+ days as stale
+    if (daysSince != null && daysSince >= 14) {
+      const name = [c.firstName, c.lastName].filter(Boolean).join(" ") || "Unnamed";
+      staleContacts.push({ name, leadStatus: c.leadStatus, daysSinceContact: daysSince });
+      if (daysSince > maxOverdue) maxOverdue = daysSince;
+    } else if (daysSince == null && c.lastContactDate == null) {
+      const name = [c.firstName, c.lastName].filter(Boolean).join(" ") || "Unnamed";
+      staleContacts.push({ name, leadStatus: c.leadStatus, daysSinceContact: null });
+    }
+  }
+
+  staleContacts.sort((a, b) => (b.daysSinceContact ?? 999) - (a.daysSinceContact ?? 999));
+
+  // Pull today's follow-up reminders from calendar
+  const todayFollowUpReminders: Array<{ time: string; summary: string }> = [];
+  if (accessToken) {
+    try {
+      const auth = new google.auth.OAuth2();
+      auth.setCredentials({ access_token: accessToken });
+      const cal = google.calendar({ version: "v3", auth });
+      const todayStart2 = new Date(now);
+      todayStart2.setHours(0, 0, 0, 0);
+      const todayEnd2 = new Date(now);
+      todayEnd2.setHours(23, 59, 59, 999);
+      const fuRes = await cal.events.list({
+        calendarId: "primary",
+        timeMin: todayStart2.toISOString(),
+        timeMax: todayEnd2.toISOString(),
+        q: "follow up",
+        singleEvents: true,
+        orderBy: "startTime",
+      });
+      for (const e of fuRes.data.items ?? []) {
+        const start = e.start?.dateTime ?? e.start?.date ?? "";
+        let time = "";
+        if (start) {
+          try {
+            time = new Date(start).toLocaleTimeString("en-US", {
+              hour: "numeric",
+              minute: "2-digit",
+              hour12: true,
+            });
+          } catch {
+            time = start;
+          }
+        }
+        todayFollowUpReminders.push({ time, summary: e.summary ?? "" });
+      }
+    } catch {
+      // Calendar errors already captured above
+    }
+  }
+
+  const followUp: DailyBriefData["followUp"] = {
+    totalContacts: contacts.length,
+    byStatus,
+    contactedLast7d,
+    staleContacts: staleContacts.slice(0, 5),
+    todayReminders: todayFollowUpReminders,
+    overdueDays: maxOverdue > 0 ? maxOverdue : null,
+  };
 
   // --- Marketing queue ---
   const marketingItems: MarketingItem[] = [];
@@ -275,8 +379,7 @@ export async function buildDailyBrief(
     listingHighlights: topHighlights,
     showings,
     calendarError,
-    contactCount,
-    recentContactCount,
+    followUp,
     marketingItems,
     complianceStandard: tenant?.complianceStandard ?? "ga_residential",
     recommendation,

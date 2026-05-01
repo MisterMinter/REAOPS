@@ -85,16 +85,55 @@ function buildShowingsSection(data: DailyBriefData): string {
 }
 
 function buildFollowUpSection(data: DailyBriefData): string {
+  const fu = data.followUp;
   const lines = [section("📬", "FOLLOW-UP STATUS")];
 
-  lines.push(`Contacts in CRM: <b>${data.contactCount}</b>`);
-  lines.push(`Contacted last 7 days: <b>${data.recentContactCount}</b>`);
+  lines.push(`Contacts: <b>${fu.totalContacts}</b>`);
 
-  if (data.contactCount > 0) {
-    const rate = Math.round((data.recentContactCount / data.contactCount) * 100);
+  const statusEntries = Object.entries(fu.byStatus)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4);
+  if (statusEntries.length > 0) {
+    const statusLine = statusEntries
+      .map(([s, n]) => `${esc(s)}: ${n}`)
+      .join("  |  ");
+    lines.push(statusLine);
+  }
+
+  lines.push(`Contacted last 7 days: <b>${fu.contactedLast7d}</b>`);
+
+  if (fu.totalContacts > 0) {
+    const rate = Math.round((fu.contactedLast7d / fu.totalContacts) * 100);
     const filled = Math.round(rate / 10);
     const bar = "█".repeat(filled) + "░".repeat(10 - filled);
-    lines.push(`${bar} ${rate}% recent contact rate`);
+    lines.push(`${bar} ${rate}% engagement (7d)`);
+  }
+
+  if (fu.todayReminders.length > 0) {
+    lines.push("");
+    lines.push(`<b>Today's follow-ups:</b>`);
+    for (const r of fu.todayReminders) {
+      lines.push(bullet(`${esc(r.time)} — ${esc(r.summary)}`));
+    }
+  }
+
+  if (fu.staleContacts.length > 0) {
+    lines.push("");
+    lines.push(`⚠️ <b>Needs outreach</b> (14+ days no contact):`);
+    for (const c of fu.staleContacts) {
+      const days =
+        c.daysSinceContact != null ? `${c.daysSinceContact}d ago` : "never contacted";
+      const status = c.leadStatus ? ` (${esc(c.leadStatus)})` : "";
+      lines.push(bullet(`${esc(c.name)}${status} — ${days}`));
+    }
+  } else if (fu.totalContacts > 0) {
+    lines.push("✅ All contacts reached within 14 days");
+  }
+
+  if (fu.overdueDays != null && fu.overdueDays > 30) {
+    lines.push(
+      `\n⚠️ Longest gap: <b>${fu.overdueDays} days</b> — consider re-engagement campaign`
+    );
   }
 
   return lines.join("\n");
@@ -226,7 +265,29 @@ export function formatBriefPlainText(
 
   lines.push("");
   lines.push(`📬 FOLLOW-UP STATUS`);
-  lines.push(`Contacts: ${data.contactCount} | Contacted last 7d: ${data.recentContactCount}`);
+  lines.push(`Contacts: ${data.followUp.totalContacts} | Contacted last 7d: ${data.followUp.contactedLast7d}`);
+
+  const fuStatusEntries = Object.entries(data.followUp.byStatus)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4);
+  if (fuStatusEntries.length > 0) {
+    lines.push(fuStatusEntries.map(([s, n]) => `${s}: ${n}`).join(" | "));
+  }
+
+  if (data.followUp.todayReminders.length > 0) {
+    lines.push("Today's follow-ups:");
+    for (const r of data.followUp.todayReminders) {
+      lines.push(` • ${r.time} — ${r.summary}`);
+    }
+  }
+
+  if (data.followUp.staleContacts.length > 0) {
+    lines.push("Needs outreach (14+ days):");
+    for (const c of data.followUp.staleContacts) {
+      const days = c.daysSinceContact != null ? `${c.daysSinceContact}d ago` : "never";
+      lines.push(` • ${c.name} — ${days}`);
+    }
+  }
 
   lines.push("");
   lines.push(`📦 MARKETING QUEUE`);
