@@ -9,6 +9,7 @@ import {
   configureBlueBubblesAction,
   removeZillowProfileSource,
   syncZillowProfileSourceAction,
+  updateAgentLoopAction,
   updateAutomationPolicyAction,
   updateDriveRootFolder,
   updateTelegramId,
@@ -80,6 +81,7 @@ export default async function SettingsPage({
           automationRules: { orderBy: { createdAt: "asc" } },
           sendingIdentities: { orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }] },
           channelAccounts: { orderBy: { updatedAt: "desc" } },
+          agentLoops: { orderBy: { kind: "asc" } },
         },
       })
     : null;
@@ -335,6 +337,49 @@ export default async function SettingsPage({
                   </form>
                 </>
               )}
+            </div>
+
+            <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4 lg:col-span-2">
+              <h3 className="font-medium text-[var(--txt)]">Always-on agent loops</h3>
+              <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                {opsConfig.agentLoops.map((loop) => (
+                  <form key={loop.id} action={updateAgentLoopAction} className="rounded border border-[var(--border)] bg-[var(--card)] p-3">
+                    <input type="hidden" name="id" value={loop.id} />
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-[var(--txt)]">{loop.name}</div>
+                        <div className="mt-1 text-xs text-[var(--txt3)]">
+                          {loop.kind} · last run {loop.lastRunAt ? loop.lastRunAt.toLocaleString() : "never"}
+                        </div>
+                      </div>
+                      <label className="flex items-center gap-2 text-xs text-[var(--txt2)]">
+                        <input type="checkbox" name="enabled" defaultChecked={loop.enabled} disabled={!canEdit} />
+                        Enabled
+                      </label>
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-[180px_1fr_auto]">
+                      <input
+                        name="cadence"
+                        defaultValue={loop.cadence}
+                        disabled={!canEdit}
+                        className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm"
+                      />
+                      <input
+                        name="persona"
+                        defaultValue={loop.persona ?? ""}
+                        placeholder="Persona"
+                        disabled={!canEdit}
+                        className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm"
+                      />
+                      {canEdit && (
+                        <button type="submit" className="rounded-md bg-[var(--teal)]/20 px-3 py-2 text-sm font-semibold text-[var(--teal)]">
+                          Save
+                        </button>
+                      )}
+                    </div>
+                  </form>
+                ))}
+              </div>
             </div>
           </div>
         </section>

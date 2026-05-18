@@ -1,5 +1,6 @@
 import {
   ApprovalMode,
+  AgentLoopKind,
   ChannelKind,
   Prisma,
   SendingIdentityType,
@@ -45,6 +46,37 @@ const DEFAULT_RULES = [
     trigger: "high_risk_follow_up",
     channel: ChannelKind.GMAIL,
     approvalMode: ApprovalMode.APPROVAL_REQUIRED,
+  },
+];
+
+const DEFAULT_AGENT_LOOPS = [
+  {
+    kind: AgentLoopKind.DAILY_OPS,
+    name: "Daily Ops Manager",
+    cadence: "weekday_morning",
+    persona:
+      "Direct, warm, lightly opinionated ops manager. Prioritize revenue recovery, approvals, and avoidable drift.",
+  },
+  {
+    kind: AgentLoopKind.FOLLOW_UP_RECOVERY,
+    name: "Follow-Up Recovery",
+    cadence: "hourly_business_hours",
+    persona:
+      "Persistent but professional revenue recovery assistant. Create drafts and tasks before things go stale.",
+  },
+  {
+    kind: AgentLoopKind.MARKETING_PLANNING,
+    name: "Marketing Planner",
+    cadence: "daily",
+    persona:
+      "Practical listing marketing manager. Turn listing gaps into plans and reusable assets.",
+  },
+  {
+    kind: AgentLoopKind.COMPLIANCE_SWEEP,
+    name: "Compliance Sweep",
+    cadence: "daily",
+    persona:
+      "Careful brokerage ops reviewer. Flag deadlines, contract completeness issues, SOP gaps, and fair-housing-sensitive copy.",
   },
 ];
 
@@ -115,6 +147,25 @@ export async function ensureOpsDefaults(
         },
       });
     }
+  }
+
+  for (const loop of DEFAULT_AGENT_LOOPS) {
+    await prisma.agentLoop.upsert({
+      where: { tenantId_kind: { tenantId, kind: loop.kind } },
+      create: {
+        tenantId,
+        kind: loop.kind,
+        name: loop.name,
+        cadence: loop.cadence,
+        persona: loop.persona,
+        enabled: true,
+      },
+      update: {
+        name: loop.name,
+        cadence: loop.cadence,
+        persona: loop.persona,
+      },
+    });
   }
 
   const identity = await prisma.sendingIdentity.findFirst({

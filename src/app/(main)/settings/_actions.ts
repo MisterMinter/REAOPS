@@ -228,6 +228,26 @@ export async function addSendingIdentityAction(formData: FormData) {
   revalidatePath("/settings");
 }
 
+export async function updateAgentLoopAction(formData: FormData) {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return;
+
+  await prisma.agentLoop.updateMany({
+    where: { id, tenantId: ctx.tenantId },
+    data: {
+      enabled: formData.get("enabled") === "on",
+      cadence: String(formData.get("cadence") ?? "manual").trim() || "manual",
+      persona: String(formData.get("persona") ?? "").trim() || null,
+    },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/command");
+}
+
 export async function configureBlueBubblesAction(formData: FormData) {
   const ctx = await getTenantEditorContext();
   if (!ctx?.canEdit) throw new Error("Forbidden");

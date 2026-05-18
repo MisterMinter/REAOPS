@@ -1,7 +1,10 @@
 import Link from "next/link";
+import { AgentLoopKind } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { buildOpsCommandCenter, contactDisplayName } from "@/lib/ops/workflows";
+import { ensureOpsDefaults } from "@/lib/ops/defaults";
+import { runAgentLoopAction } from "@/app/(main)/command/_actions";
 
 function dateLabel(d: Date | null) {
   if (!d) return "No due date";
@@ -21,7 +24,20 @@ export default async function CommandCenterPage() {
     );
   }
 
-  const data = await buildOpsCommandCenter(prisma, user.tenantId);
+  await ensureOpsDefaults(prisma, user.tenantId);
+  const [data, loops, runs] = await Promise.all([
+    buildOpsCommandCenter(prisma, user.tenantId),
+    prisma.agentLoop.findMany({
+      where: { tenantId: user.tenantId },
+      orderBy: { kind: "asc" },
+    }),
+    prisma.agentRun.findMany({
+      where: { tenantId: user.tenantId },
+      include: { loop: true },
+      orderBy: { startedAt: "desc" },
+      take: 8,
+    }),
+  ]);
 
   return (
     <div className="space-y-8">
@@ -39,6 +55,74 @@ export default async function CommandCenterPage() {
         <Metric label="Stale contacts" value={data.staleContacts.length} tone="coral" />
         <Metric label="Drafts awaiting review" value={data.waitingDraftCount} tone="teal" />
       </div>
+
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="font-display text-xl text-[var(--gold)]">Always-On Agent Loops</h2>
+            <p className="mt-1 max-w-3xl text-sm text-[var(--txt2)]">
+              Run the ops agent manually now, or schedule the cron endpoint to keep it moving in the background. Every
+              run is logged with observations and created work.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {Object.values(AgentLoopKind).map((kind) => (
+              <form key={kind} action={runAgentLoopAction}>
+                <input type="hidden" name="kind" value={kind} />
+                <button type="submit" className="rounded-md border border-[var(--gold)] px-3 py-2 text-xs font-semibold text-[var(--gold)] hover:bg-[var(--gold)]/10">
+                  Run {kind.replaceAll("_", " ").toLowerCase()}
+                </button>
+              </form>
+            ))}
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 lg:grid-cols-4">
+          {loops.map((loop) => (
+            <div key={loop.id} className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3">
+              <div className="font-medium text-[var(--txt)]">{loop.name}</div>
+              <div className="mt-1 text-xs text-[var(--txt3)]">
+                {loop.enabled ? "Enabled" : "Paused"} · {loop.cadence}
+              </div>
+              <div className="mt-1 text-xs text-[var(--txt3)]">
+                Last run: {loop.lastRunAt ? loop.lastRunAt.toLocaleString() : "never"}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 space-y-3">
+          {runs.length === 0 ? (
+            <p className="text-sm text-[var(--txt3)]">No agent loop runs yet.</p>
+          ) : (
+            runs.map((run) => (
+              <details key={run.id} className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3">
+                <summary className="cursor-pointer text-sm font-medium text-[var(--txt)]">
+                  {run.loop?.name ?? run.kind} · {run.status} · {run.startedAt.toLocaleString()}
+                </summary>
+                {run.summary && <p className="mt-3 text-sm text-[var(--txt2)]">{run.summary}</p>}
+                {Array.isArray(run.actions) && run.actions.length > 0 && (
+                  <ul className="mt-3 list-inside list-disc text-sm text-[var(--txt2)]">
+                    {run.actions.map((action, idx) => {
+                      const item = action as { label?: string; href?: string; status?: string };
+                      return (
+                        <li key={idx}>
+                          {item.href ? (
+                            <Link href={item.href} className="text-[var(--teal)] hover:underline">
+                              {item.label ?? "Action"}
+                            </Link>
+                          ) : (
+                            item.label ?? "Action"
+                          )}
+                          {item.status ? ` · ${item.status}` : ""}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </details>
+            ))
+          )}
+        </div>
+      </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
