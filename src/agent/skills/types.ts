@@ -1,4 +1,5 @@
 export type ToolContext = {
+  userId: string;
   accessToken: string | null;
   tenantId: string | null;
   driveRootFolderId: string | null;

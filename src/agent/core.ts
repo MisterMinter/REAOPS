@@ -56,6 +56,7 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
 
   const accessToken = await getAccessToken(input.userId);
   const toolCtx = {
+    userId: ctx.userId,
     accessToken,
     tenantId: ctx.tenantId,
     driveRootFolderId: ctx.driveRootFolderId,

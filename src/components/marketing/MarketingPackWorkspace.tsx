@@ -229,6 +229,25 @@ export function MarketingPackWorkspace({
         setInstagram(parsed.instagram);
         setEmailSubjects(parsed.emailSubjects);
         setCardBlurb(parsed.cardBlurb);
+        void fetch("/api/marketing/assets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: `Marketing pack - ${draftFacts.address}`,
+            type: "MLS_COPY",
+            content: [
+              `MLS:\n${parsed.mls}`,
+              `Instagram:\n${parsed.instagram}`,
+              `Email subjects:\n${parsed.emailSubjects}`,
+              `Card line:\n${parsed.cardBlurb}`,
+            ].join("\n\n---\n\n"),
+            metadata: {
+              address: draftFacts.address,
+              cachedListingId: selected.cachedListingId,
+              source: selected.source,
+            },
+          }),
+        }).catch(() => {});
       }
       setStreamText("");
     } catch (e) {

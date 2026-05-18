@@ -11,6 +11,8 @@ import {
 } from "@/lib/marketing-generate";
 import { prisma } from "@/lib/prisma";
 import { getDriveClient } from "@/lib/drive";
+import { generateMarketingAsset } from "@/lib/ops/workflows";
+import { MarketingAssetType } from "@prisma/client";
 
 export function marketingTools(ctx: ToolContext) {
   return {
@@ -79,6 +81,19 @@ export function marketingTools(ctx: ToolContext) {
         });
 
         const parsed = parseMarketingPackResponse(result.text);
+        if (ctx.tenantId) {
+          await generateMarketingAsset({
+            actor: { id: ctx.userId, tenantId: ctx.tenantId },
+            type: MarketingAssetType.MLS_COPY,
+            title: `Marketing pack - ${facts.address}`,
+            content: result.text,
+            metadata: {
+              listingId: params.listingId ?? null,
+              address: facts.address,
+              heroPhotoName: params.heroPhotoName ?? null,
+            },
+          }).catch((e) => console.error("[marketing-tool] asset persist failed:", e));
+        }
         return { ...parsed, raw: result.text };
       },
     }),

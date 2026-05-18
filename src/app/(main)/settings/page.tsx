@@ -2,16 +2,23 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  addLeadSourceAction,
+  addSendingIdentityAction,
   addZillowProfileSource,
+  checkBlueBubblesAction,
+  configureBlueBubblesAction,
   removeZillowProfileSource,
   syncZillowProfileSourceAction,
+  updateAutomationPolicyAction,
   updateDriveRootFolder,
   updateTelegramId,
   updateTenantProfile,
   uploadTenantLogoFromSettings,
 } from "@/app/(main)/settings/_actions";
 import { SettingsForms } from "@/app/(main)/settings/settings-forms";
+import { ensureOpsDefaults } from "@/lib/ops/defaults";
 import { hasLegacyRelativeLogoPath, resolveTenantLogoForDisplay } from "@/lib/tenant-logo";
+import { ApprovalMode, ChannelKind, SendingIdentityType } from "@prisma/client";
 
 export default async function SettingsPage({
   searchParams,
@@ -59,6 +66,23 @@ export default async function SettingsPage({
         orderBy: { email: "asc" },
       })
     : [];
+
+  if (user.tenantId) {
+    await ensureOpsDefaults(prisma, user.tenantId);
+  }
+
+  const opsConfig = user.tenantId
+    ? await prisma.tenant.findUnique({
+        where: { id: user.tenantId },
+        select: {
+          defaultApprovalMode: true,
+          leadSources: { orderBy: { name: "asc" } },
+          automationRules: { orderBy: { createdAt: "asc" } },
+          sendingIdentities: { orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }] },
+          channelAccounts: { orderBy: { updatedAt: "desc" } },
+        },
+      })
+    : null;
 
   return (
     <div className="space-y-10">
@@ -180,6 +204,140 @@ export default async function SettingsPage({
           removeZillowProfile={removeZillowProfileSource}
           syncZillowProfile={syncZillowProfileSourceAction}
         />
+      )}
+
+      {tenant && opsConfig && (
+        <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
+          <h2 className="font-display text-xl text-[var(--gold)]">Operations OS configuration</h2>
+          <p className="mt-2 max-w-3xl text-sm text-[var(--txt2)]">
+            Follow-up automation, lead sources, sending identities, and premium channel adapters. These settings drive
+            both chat actions and the web UI.
+          </p>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4">
+              <h3 className="font-medium text-[var(--txt)]">Approval policy</h3>
+              <form action={updateAutomationPolicyAction} className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="min-w-0 flex-1">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+                    Default mode
+                  </span>
+                  <select
+                    name="defaultApprovalMode"
+                    defaultValue={opsConfig.defaultApprovalMode}
+                    disabled={!canEdit}
+                    className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                  >
+                    {Object.values(ApprovalMode).map((mode) => (
+                      <option key={mode} value={mode}>
+                        {mode}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {canEdit && (
+                  <button type="submit" className="rounded-md bg-[var(--gold)] px-4 py-2 text-sm font-semibold text-[var(--bg)]">
+                    Save
+                  </button>
+                )}
+              </form>
+              <p className="mt-3 text-xs text-[var(--txt3)]">
+                High-risk messages are still forced into approval by the workflow policy.
+              </p>
+            </div>
+
+            <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4">
+              <h3 className="font-medium text-[var(--txt)]">Lead sources</h3>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {opsConfig.leadSources.map((source) => (
+                  <span key={source.id} className="rounded-full border border-[var(--border2)] px-3 py-1 text-xs text-[var(--txt2)]">
+                    {source.name}
+                  </span>
+                ))}
+              </div>
+              {canEdit && (
+                <form action={addLeadSourceAction} className="mt-4 flex gap-2">
+                  <input name="name" placeholder="New source" className="min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm" />
+                  <button type="submit" className="rounded-md bg-[var(--teal)]/20 px-3 py-2 text-sm font-semibold text-[var(--teal)]">
+                    Add
+                  </button>
+                </form>
+              )}
+            </div>
+
+            <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4">
+              <h3 className="font-medium text-[var(--txt)]">Sending identities</h3>
+              <div className="mt-3 space-y-2">
+                {opsConfig.sendingIdentities.length === 0 ? (
+                  <p className="text-xs text-[var(--txt3)]">No identities configured yet.</p>
+                ) : (
+                  opsConfig.sendingIdentities.map((identity) => (
+                    <div key={identity.id} className="rounded border border-[var(--border)] bg-[var(--card)] p-3 text-sm">
+                      <div className="text-[var(--txt)]">
+                        {identity.displayName} {identity.isDefault ? <span className="text-xs text-[var(--gold)]">default</span> : null}
+                      </div>
+                      <div className="mt-1 text-xs text-[var(--txt3)]">
+                        {identity.channel} · {identity.type} · {identity.email || identity.phone || "no address"}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              {canEdit && (
+                <form action={addSendingIdentityAction} className="mt-4 grid gap-2 sm:grid-cols-2">
+                  <input name="displayName" placeholder="Shared Ops" className="rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm sm:col-span-2" />
+                  <select name="channel" defaultValue={ChannelKind.GMAIL} className="rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm">
+                    {Object.values(ChannelKind).map((channel) => (
+                      <option key={channel} value={channel}>{channel}</option>
+                    ))}
+                  </select>
+                  <select name="type" defaultValue={SendingIdentityType.SHARED_OPS} className="rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm">
+                    {Object.values(SendingIdentityType).map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                  <input name="email" placeholder="Email" className="rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm" />
+                  <input name="phone" placeholder="Phone/iMessage" className="rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm" />
+                  <label className="flex items-center gap-2 text-xs text-[var(--txt2)]">
+                    <input type="checkbox" name="isDefault" /> Default
+                  </label>
+                  <button type="submit" className="rounded-md bg-[var(--teal)]/20 px-3 py-2 text-sm font-semibold text-[var(--teal)]">
+                    Add identity
+                  </button>
+                </form>
+              )}
+            </div>
+
+            <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4">
+              <h3 className="font-medium text-[var(--txt)]">BlueBubbles iMessage adapter</h3>
+              {opsConfig.channelAccounts
+                .filter((account) => account.kind === ChannelKind.BLUEBUBBLES)
+                .map((account) => (
+                  <p key={account.id} className="mt-2 text-xs text-[var(--txt3)]">
+                    {account.label}: <span className="text-[var(--txt2)]">{account.status}</span>
+                    {account.lastError ? <span className="block text-[var(--coral)]">{account.lastError}</span> : null}
+                  </p>
+                ))}
+              {canEdit && (
+                <>
+                  <form action={configureBlueBubblesAction} className="mt-4 grid gap-2">
+                    <input name="label" placeholder="BlueBubbles Mac mini" className="rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm" />
+                    <input name="baseUrl" placeholder="https://bluebubbles.example.com" className="rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm" />
+                    <input name="password" placeholder="API password" type="password" className="rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm" />
+                    <button type="submit" className="rounded-md bg-[var(--teal)]/20 px-3 py-2 text-sm font-semibold text-[var(--teal)]">
+                      Save BlueBubbles
+                    </button>
+                  </form>
+                  <form action={checkBlueBubblesAction} className="mt-2">
+                    <button type="submit" className="rounded-md border border-[var(--border2)] px-3 py-1.5 text-xs text-[var(--txt2)]">
+                      Health check
+                    </button>
+                  </form>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
       )}
 
       {tenant && user.role === "ADMIN" && (

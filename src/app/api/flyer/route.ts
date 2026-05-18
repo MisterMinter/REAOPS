@@ -5,10 +5,12 @@ import { getGoogleAccessTokenForUser } from "@/lib/google-account-token";
 import { resolveLanguageModel } from "@/lib/ai-chat";
 import { generateObject } from "ai";
 import { z } from "zod";
+import { MarketingAssetType } from "@prisma/client";
 import { getDriveClient, listPhotosInFolder } from "@/lib/drive";
 import { renderFlyerHtml, type FlyerData } from "@/lib/flyer-templates";
 import { renderFlyerPdf, renderFlyerPng } from "@/lib/flyer-render";
 import { sendEmail } from "@/lib/gmail-send";
+import { generateMarketingAsset } from "@/lib/ops/workflows";
 import { Readable } from "stream";
 
 const flyerCopySchema = z.object({
@@ -264,6 +266,30 @@ export async function POST(req: NextRequest) {
       : null,
     savedToDrive: !!(pdfDriveId || pngDriveId),
   };
+
+  try {
+    await generateMarketingAsset({
+      actor: {
+        id: session.user.id,
+        tenantId,
+        role: session.user.role,
+      },
+      type: MarketingAssetType.FLYER,
+      title: pdfName,
+      content: `${copy.headline}\n\n${copy.tagline}\n\n${copy.featureBullets.join("\n")}\n\n${copy.ctaText}`,
+      metadata: {
+        address: facts.address,
+        cachedListingId: listing?.id ?? null,
+        pdfDriveId,
+        pngDriveId,
+        pdfName,
+        pngName,
+        templateStyle: copy.templateStyle,
+      },
+    });
+  } catch (e) {
+    console.error("[flyer-api] Failed to persist marketing asset:", e);
+  }
 
   if (action === "email") {
     const toEmail =

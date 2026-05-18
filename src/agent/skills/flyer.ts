@@ -7,6 +7,8 @@ import { getDriveClient, listPhotosInFolder } from "@/lib/drive";
 import { renderFlyerHtml, type FlyerData } from "@/lib/flyer-templates";
 import { renderFlyerPdf, renderFlyerPng } from "@/lib/flyer-render";
 import { sendEmail } from "@/lib/gmail-send";
+import { generateMarketingAsset } from "@/lib/ops/workflows";
+import { MarketingAssetType } from "@prisma/client";
 import { Readable } from "stream";
 
 const flyerCopySchema = z.object({
@@ -105,6 +107,22 @@ export function flyerTools(ctx: ToolContext) {
           } catch (e) {
             console.error("[flyer] Drive upload failed:", e);
           }
+        }
+
+        if (ctx.tenantId) {
+          await generateMarketingAsset({
+            actor: { id: ctx.userId, tenantId: ctx.tenantId },
+            type: MarketingAssetType.FLYER,
+            title: pdfName,
+            content: `${copy.headline}\n\n${copy.tagline}\n\n${copy.featureBullets.join("\n")}\n\n${copy.ctaText}`,
+            metadata: {
+              listingId: params.listingId ?? null,
+              address: facts.address,
+              templateStyle: copy.templateStyle,
+              pdfDriveId,
+              pngDriveId,
+            },
+          }).catch((e) => console.error("[flyer-tool] asset persist failed:", e));
         }
 
         return {

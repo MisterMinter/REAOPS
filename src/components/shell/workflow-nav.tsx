@@ -5,9 +5,13 @@ import { usePathname } from "next/navigation";
 
 const LINKS = [
   { href: "/start", label: "00 · Start" },
-  { href: "/marketing", label: "01 · Listing Marketing Pack" },
-  { href: "/assistant", label: "02 · Broker Assistant" },
-  { href: "/settings", label: "03 · Settings" },
+  { href: "/command", label: "01 · Command Center" },
+  { href: "/follow-up", label: "02 · Follow-Up Queue" },
+  { href: "/contacts", label: "03 · Contacts" },
+  { href: "/marketing", label: "04 · Marketing Studio" },
+  { href: "/compliance", label: "05 · Compliance" },
+  { href: "/assistant", label: "06 · Broker Assistant" },
+  { href: "/settings", label: "07 · Settings" },
 ];
 
 export function WorkflowNav() {

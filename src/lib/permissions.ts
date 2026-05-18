@@ -4,6 +4,11 @@ export type Permission =
   | "marketing.view"
   | "marketing.generate"
   | "marketing.publish"
+  | "operations.view"
+  | "operations.manage"
+  | "followup.approve"
+  | "compliance.view"
+  | "compliance.manage"
   | "assistant.chat"
   | "settings.view"
   | "settings.edit"
@@ -17,6 +22,11 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "marketing.view",
     "marketing.generate",
     "marketing.publish",
+    "operations.view",
+    "operations.manage",
+    "followup.approve",
+    "compliance.view",
+    "compliance.manage",
     "assistant.chat",
     "settings.view",
     "settings.edit",
@@ -29,12 +39,26 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "marketing.view",
     "marketing.generate",
     "marketing.publish",
+    "operations.view",
+    "operations.manage",
+    "followup.approve",
+    "compliance.view",
+    "compliance.manage",
     "assistant.chat",
     "settings.view",
     "settings.edit",
     "settings.integrations",
   ],
-  AGENT: ["marketing.view", "marketing.generate", "assistant.chat", "settings.view"],
+  AGENT: [
+    "marketing.view",
+    "marketing.generate",
+    "operations.view",
+    "operations.manage",
+    "followup.approve",
+    "compliance.view",
+    "assistant.chat",
+    "settings.view",
+  ],
 };
 
 export function hasPermission(role: UserRole, permission: Permission): boolean {

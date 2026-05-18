@@ -68,12 +68,31 @@ model Tenant {
   complianceStandard   String @default("ga_residential")
   brokerPhone          String?
   flyerNotifyEmail     String?
+  defaultApprovalMode  ApprovalMode @default(AUTO_SEND_LOW_RISK)
 
   users                 User[]
   activityLogs          ActivityLog[]
   cachedListings        CachedListing[]
   cachedContacts        CachedContact[]
   zillowProfileSources  ZillowProfileSource[]
+  leadSources           LeadSource[]
+  pipelines             Pipeline[]
+  contacts              Contact[]
+  listings              Listing[]
+  opportunities         Opportunity[]
+  touchpoints           Touchpoint[]
+  followUpTasks         FollowUpTask[]
+  messageDrafts         MessageDraft[]
+  approvals             Approval[]
+  automationRules       AutomationRule[]
+  channelAccounts       ChannelAccount[]
+  sendingIdentities     SendingIdentity[]
+  marketingAssets       MarketingAsset[]
+  complianceReviews     ComplianceReview[]
+  sopTemplates          SopTemplate[]
+  integrationMappings   IntegrationMapping[]
+  syncRuns              SyncRun[]
+  auditEvents           AuditEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -138,6 +157,95 @@ enum UserRole {
   AGENT
 }
 
+enum FollowUpTaskStatus {
+  OPEN
+  DRAFTED
+  WAITING_APPROVAL
+  APPROVED
+  SENT
+  SKIPPED
+  FAILED
+}
+
+enum MessageRisk {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum ApprovalMode {
+  DRAFT_ONLY
+  APPROVAL_REQUIRED
+  AUTO_SEND_LOW_RISK
+  AUTO_SEND_ALL
+}
+
+enum ChannelKind {
+  GMAIL
+  TELEGRAM
+  BLUEBUBBLES
+  WHATSAPP
+  SMS
+}
+
+enum SendingIdentityType {
+  SHARED_OPS
+  BROKER_OWNER
+  ASSIGNED_AGENT
+}
+
+enum TouchpointDirection {
+  INBOUND
+  OUTBOUND
+  INTERNAL
+}
+
+enum MessageDraftStatus {
+  DRAFT
+  WAITING_APPROVAL
+  APPROVED
+  SENT
+  SKIPPED
+  FAILED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MarketingAssetType {
+  FLYER
+  SOCIAL_IMAGE
+  SOCIAL_COPY
+  EMAIL_COPY
+  MLS_COPY
+}
+
+enum MarketingAssetStatus {
+  DRAFT
+  GENERATED
+  APPROVED
+  PUBLISHED
+  FAILED
+}
+
+enum ComplianceReviewStatus {
+  OPEN
+  IN_REVIEW
+  FLAGGED
+  CLEARED
+  NEEDS_HUMAN
+}
+
+enum SyncRunStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
 model User {
   id       String    @id @default(cuid())
   email    String    @unique
@@ -159,11 +267,489 @@ model User {
   activityLogs           ActivityLog[]
   chatSessions           ChatSession[]
   zillowProfileSources   ZillowProfileSource[]
+  ownedContacts          Contact[]        @relation("ContactOwner")
+  ownedTasks             FollowUpTask[]   @relation("FollowUpTaskOwner")
+  createdTasks           FollowUpTask[]   @relation("FollowUpTaskCreator")
+  createdDrafts          MessageDraft[]   @relation("MessageDraftCreator")
+  approvalsRequested     Approval[]       @relation("ApprovalRequester")
+  approvalsDecided       Approval[]       @relation("ApprovalDecider")
+  touchpointsCreated     Touchpoint[]     @relation("TouchpointCreator")
+  sendingIdentities      SendingIdentity[]
+  auditEvents            AuditEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([tenantId])
+}
+
+model LeadSource {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  slug      String
+  isActive  Boolean  @default(true)
+  contacts  Contact[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+}
+
+model Pipeline {
+  id        String          @id @default(cuid())
+  tenantId  String
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  slug      String
+  isDefault Boolean         @default(false)
+  stages    PipelineStage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+}
+
+model PipelineStage {
+  id            String        @id @default(cuid())
+  pipelineId    String
+  pipeline      Pipeline      @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  name          String
+  slug          String
+  position      Int           @default(0)
+  isClosed      Boolean       @default(false)
+  contacts      Contact[]
+  opportunities Opportunity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([pipelineId, slug])
+  @@index([pipelineId, position])
+}
+
+model Contact {
+  id              String         @id @default(cuid())
+  tenantId        String
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerUserId     String?
+  owner           User?          @relation("ContactOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  leadSourceId    String?
+  leadSource      LeadSource?    @relation(fields: [leadSourceId], references: [id], onDelete: SetNull)
+  pipelineStageId String?
+  pipelineStage   PipelineStage? @relation(fields: [pipelineStageId], references: [id], onDelete: SetNull)
+  externalId      String?
+  sourceSystem    String?
+  firstName       String?
+  lastName        String?
+  email           String?
+  phone           String?
+  status          String         @default("New")
+  isVip           Boolean        @default(false)
+  lastContactAt   DateTime?
+  nextActionAt    DateTime?
+  notes           String?        @db.Text
+  rawData         Json?
+
+  opportunities     Opportunity[]
+  touchpoints       Touchpoint[]
+  followUpTasks     FollowUpTask[]
+  messageDrafts     MessageDraft[]
+  marketingAssets   MarketingAsset[]
+  complianceReviews ComplianceReview[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, ownerUserId])
+  @@index([tenantId, email])
+  @@index([tenantId, phone])
+}
+
+model Listing {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  externalId    String?
+  sourceSystem  String?
+  address       String
+  shortAddress  String
+  city          String?
+  state         String?
+  zip           String?
+  beds          Int?
+  baths         Float?
+  sqft          Int?
+  price         Int?
+  priceDisplay  String?
+  status        String   @default("Active")
+  daysOnMarket  Int?
+  features      String?  @db.Text
+  notes         String?  @db.Text
+  mlsNumber     String?
+  driveFolderId String?
+  rawData       Json?
+
+  opportunities     Opportunity[]
+  touchpoints       Touchpoint[]
+  followUpTasks     FollowUpTask[]
+  marketingAssets   MarketingAsset[]
+  complianceReviews ComplianceReview[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, externalId])
+  @@index([tenantId, mlsNumber])
+  @@unique([tenantId, sourceSystem, externalId])
+}
+
+model Opportunity {
+  id              String         @id @default(cuid())
+  tenantId        String
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactId       String?
+  contact         Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  listingId       String?
+  listing         Listing?       @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  pipelineStageId String?
+  pipelineStage   PipelineStage? @relation(fields: [pipelineStageId], references: [id], onDelete: SetNull)
+  externalId      String?
+  sourceSystem    String?
+  title           String
+  type            String         @default("buyer")
+  status          String         @default("Open")
+  value           Int?
+  rawData         Json?
+
+  touchpoints       Touchpoint[]
+  followUpTasks     FollowUpTask[]
+  complianceReviews ComplianceReview[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, contactId])
+  @@index([tenantId, listingId])
+}
+
+model Touchpoint {
+  id             String              @id @default(cuid())
+  tenantId       String
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactId      String?
+  contact        Contact?            @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  listingId      String?
+  listing        Listing?            @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  opportunityId  String?
+  opportunity    Opportunity?        @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  followUpTaskId String?
+  followUpTask   FollowUpTask?       @relation(fields: [followUpTaskId], references: [id], onDelete: SetNull)
+  messageDraftId String?
+  messageDraft   MessageDraft?       @relation(fields: [messageDraftId], references: [id], onDelete: SetNull)
+  createdByUserId String?
+  createdBy       User?              @relation("TouchpointCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  channel        ChannelKind?
+  direction      TouchpointDirection @default(INTERNAL)
+  subject        String?
+  body           String              @db.Text
+  externalId     String?
+  occurredAt     DateTime            @default(now())
+  metadata       Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, contactId])
+  @@index([tenantId, followUpTaskId])
+}
+
+model FollowUpTask {
+  id               String             @id @default(cuid())
+  tenantId         String
+  tenant           Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactId        String?
+  contact          Contact?           @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  listingId        String?
+  listing          Listing?           @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  opportunityId    String?
+  opportunity      Opportunity?       @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  ownerUserId      String?
+  owner            User?              @relation("FollowUpTaskOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  createdByUserId  String?
+  createdBy        User?              @relation("FollowUpTaskCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  automationRuleId String?
+  automationRule   AutomationRule?    @relation(fields: [automationRuleId], references: [id], onDelete: SetNull)
+  title            String
+  context          String?            @db.Text
+  source           String             @default("manual")
+  status           FollowUpTaskStatus @default(OPEN)
+  risk             MessageRisk        @default(LOW)
+  priority         Int                @default(3)
+  dueAt            DateTime?
+  completedAt      DateTime?
+  lastError        String?            @db.Text
+
+  drafts      MessageDraft[]
+  approvals   Approval[]
+  touchpoints Touchpoint[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, dueAt])
+  @@index([tenantId, ownerUserId])
+  @@index([tenantId, contactId])
+}
+
+model MessageDraft {
+  id                String             @id @default(cuid())
+  tenantId          String
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  taskId            String?
+  task              FollowUpTask?      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  contactId         String?
+  contact           Contact?           @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  sendingIdentityId String?
+  sendingIdentity   SendingIdentity?   @relation(fields: [sendingIdentityId], references: [id], onDelete: SetNull)
+  createdByUserId   String?
+  createdBy         User?              @relation("MessageDraftCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  channel           ChannelKind
+  risk              MessageRisk        @default(LOW)
+  status            MessageDraftStatus @default(DRAFT)
+  subject           String?
+  body              String             @db.Text
+  recipient         String?
+  requiresApproval  Boolean            @default(true)
+  approvedAt        DateTime?
+  sentAt            DateTime?
+  externalMessageId String?
+  metadata          Json?
+
+  approvals   Approval[]
+  touchpoints Touchpoint[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, contactId])
+  @@index([tenantId, taskId])
+}
+
+model Approval {
+  id              String         @id @default(cuid())
+  tenantId        String
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  draftId         String?
+  draft           MessageDraft?  @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  taskId          String?
+  task            FollowUpTask?  @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  requestedForId  String?
+  requestedFor    User?          @relation("ApprovalRequester", fields: [requestedForId], references: [id], onDelete: SetNull)
+  decidedById     String?
+  decidedBy       User?          @relation("ApprovalDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  status          ApprovalStatus @default(PENDING)
+  reason          String?        @db.Text
+  decidedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, draftId])
+}
+
+model AutomationRule {
+  id                  String              @id @default(cuid())
+  tenantId            String
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name                String
+  trigger             String
+  channel             ChannelKind         @default(GMAIL)
+  approvalMode        ApprovalMode        @default(AUTO_SEND_LOW_RISK)
+  sendingIdentityType SendingIdentityType @default(SHARED_OPS)
+  enabled             Boolean             @default(true)
+  conditions          Json?
+  template            Json?
+
+  followUpTasks FollowUpTask[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, enabled])
+}
+
+model ChannelAccount {
+  id                String      @id @default(cuid())
+  tenantId          String
+  tenant            Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kind              ChannelKind
+  label             String
+  status            String      @default("configured")
+  config            Json?
+  secretRef         String?
+  lastHealthCheckAt DateTime?
+  lastError         String?     @db.Text
+
+  sendingIdentities SendingIdentity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, kind])
+}
+
+model SendingIdentity {
+  id               String              @id @default(cuid())
+  tenantId         String
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  channelAccountId String?
+  channelAccount   ChannelAccount?     @relation(fields: [channelAccountId], references: [id], onDelete: SetNull)
+  userId           String?
+  user             User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type             SendingIdentityType @default(SHARED_OPS)
+  channel          ChannelKind         @default(GMAIL)
+  displayName      String
+  email            String?
+  phone            String?
+  externalRef      String?
+  isDefault        Boolean             @default(false)
+
+  messageDrafts MessageDraft[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, channel])
+  @@index([tenantId, isDefault])
+}
+
+model MarketingAsset {
+  id              String               @id @default(cuid())
+  tenantId        String
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  listingId       String?
+  listing         Listing?             @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  contactId       String?
+  contact         Contact?             @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  createdByUserId String?
+  type            MarketingAssetType
+  status          MarketingAssetStatus @default(DRAFT)
+  title           String
+  content         String?              @db.Text
+  driveFileId     String?
+  publicUrl       String?
+  metadata        Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, listingId])
+}
+
+model SopTemplate {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title     String
+  category  String   @default("contract")
+  body      String   @db.Text
+  checklist Json?
+  isDefault Boolean  @default(false)
+
+  complianceReviews ComplianceReview[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, category])
+}
+
+model ComplianceReview {
+  id              String                 @id @default(cuid())
+  tenantId        String
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactId       String?
+  contact         Contact?               @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  listingId       String?
+  listing         Listing?               @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  opportunityId   String?
+  opportunity     Opportunity?           @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  sopTemplateId   String?
+  sopTemplate     SopTemplate?           @relation(fields: [sopTemplateId], references: [id], onDelete: SetNull)
+  status          ComplianceReviewStatus @default(OPEN)
+  title           String
+  summary         String?                @db.Text
+  flags           Json?
+  deadlineAt      DateTime?
+  reviewedById    String?
+  reviewedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, deadlineAt])
+}
+
+model IntegrationMapping {
+  id           String  @id @default(cuid())
+  tenantId     String
+  tenant       Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider     String
+  objectType   String
+  fieldMapping Json
+  enabled      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, provider, objectType])
+}
+
+model SyncRun {
+  id         String        @id @default(cuid())
+  tenantId   String
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider   String
+  direction  String        @default("inbound")
+  status     SyncRunStatus @default(PENDING)
+  startedAt  DateTime      @default(now())
+  finishedAt DateTime?
+  summary    Json?
+  error      String?       @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, provider, startedAt])
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String
+  subjectType String?
+  subjectId   String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, subjectType, subjectId])
 }
 
 model CachedListing {

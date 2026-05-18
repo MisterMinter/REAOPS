@@ -9,7 +9,11 @@ export default auth((req) => {
   if (!req.auth) {
     if (
       path.startsWith("/start") ||
+      path.startsWith("/command") ||
+      path.startsWith("/follow-up") ||
+      path.startsWith("/contacts") ||
       path.startsWith("/marketing") ||
+      path.startsWith("/compliance") ||
       path.startsWith("/assistant") ||
       path.startsWith("/settings") ||
       path.startsWith("/admin")
@@ -33,7 +37,11 @@ export const config = {
   matcher: [
     "/start",
     "/start/:path*",
+    "/command/:path*",
+    "/follow-up/:path*",
+    "/contacts/:path*",
     "/marketing/:path*",
+    "/compliance/:path*",
     "/assistant/:path*",
     "/settings/:path*",
     "/admin",

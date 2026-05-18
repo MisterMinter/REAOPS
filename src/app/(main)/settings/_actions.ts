@@ -2,8 +2,12 @@
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { checkBlueBubblesHealth } from "@/lib/channels";
+import { ensureOpsDefaults } from "@/lib/ops/defaults";
+import { canEditBrokerageConfig } from "@/lib/ops/auth";
 import { uploadTenantLogo } from "@/lib/storage";
 import { syncZillowProfileSource as runZillowSync } from "@/lib/zillow-sync";
+import { ApprovalMode, ChannelKind, SendingIdentityType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -166,4 +170,99 @@ export async function syncZillowProfileSourceAction(formData: FormData) {
     );
   }
   redirect(`/settings?saved=zillow-sync&imported=${result.imported}`);
+}
+
+export async function updateAutomationPolicyAction(formData: FormData) {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+
+  const defaultApprovalMode = String(
+    formData.get("defaultApprovalMode") ?? "AUTO_SEND_LOW_RISK"
+  ) as ApprovalMode;
+
+  await prisma.tenant.update({
+    where: { id: ctx.tenantId },
+    data: { defaultApprovalMode },
+  });
+
+  await ensureOpsDefaults(prisma, ctx.tenantId);
+  revalidatePath("/settings");
+  revalidatePath("/follow-up");
+  revalidatePath("/command");
+}
+
+export async function addLeadSourceAction(formData: FormData) {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return;
+  const { slugify } = await import("@/lib/slug");
+  await prisma.leadSource.upsert({
+    where: { tenantId_slug: { tenantId: ctx.tenantId, slug: slugify(name) } },
+    create: { tenantId: ctx.tenantId, name, slug: slugify(name) },
+    update: { name, isActive: true },
+  });
+  revalidatePath("/settings");
+  revalidatePath("/contacts");
+}
+
+export async function addSendingIdentityAction(formData: FormData) {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+  const channel = String(formData.get("channel") ?? "GMAIL") as ChannelKind;
+  const type = String(formData.get("type") ?? "SHARED_OPS") as SendingIdentityType;
+  const displayName = String(formData.get("displayName") ?? "").trim();
+  if (!displayName) return;
+
+  await prisma.sendingIdentity.create({
+    data: {
+      tenantId: ctx.tenantId,
+      channel,
+      type,
+      displayName,
+      email: String(formData.get("email") ?? "").trim() || null,
+      phone: String(formData.get("phone") ?? "").trim() || null,
+      isDefault: formData.get("isDefault") === "on",
+    },
+  });
+  revalidatePath("/settings");
+}
+
+export async function configureBlueBubblesAction(formData: FormData) {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+  const baseUrl = String(formData.get("baseUrl") ?? "").trim();
+  const password = String(formData.get("password") ?? "").trim();
+  if (!baseUrl) return;
+
+  const existing = await prisma.channelAccount.findFirst({
+    where: { tenantId: ctx.tenantId, kind: ChannelKind.BLUEBUBBLES },
+    select: { id: true },
+  });
+  const data = {
+    label: String(formData.get("label") ?? "").trim() || "BlueBubbles Mac mini",
+    status: "configured",
+    config: { baseUrl, password },
+  };
+  if (existing) {
+    await prisma.channelAccount.update({ where: { id: existing.id }, data });
+  } else {
+    await prisma.channelAccount.create({
+      data: {
+        tenantId: ctx.tenantId,
+        kind: ChannelKind.BLUEBUBBLES,
+        ...data,
+      },
+    });
+  }
+  revalidatePath("/settings");
+}
+
+export async function checkBlueBubblesAction() {
+  const s = await auth();
+  if (!s?.user?.id || !s.user.tenantId || !canEditBrokerageConfig(s.user.role)) {
+    throw new Error("Forbidden");
+  }
+  await checkBlueBubblesHealth(prisma, s.user.tenantId);
+  revalidatePath("/settings");
 }
