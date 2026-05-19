@@ -9,6 +9,7 @@ import { MarketingAssetType } from "@prisma/client";
 import { getDriveClient, listPhotosInFolder } from "@/lib/drive";
 import { renderFlyerHtml, type FlyerData } from "@/lib/flyer-templates";
 import { renderFlyerPdf, renderFlyerPng } from "@/lib/flyer-render";
+import { parseBrandKit } from "@/lib/marketing/brand-kit";
 import { sendEmail } from "@/lib/gmail-send";
 import { generateMarketingAsset } from "@/lib/ops/workflows";
 import { Readable } from "stream";
@@ -127,10 +128,12 @@ export async function POST(req: NextRequest) {
       brokerageName: true,
       name: true,
       logoUrl: true,
+      brandKit: true,
       brokerPhone: true,
       flyerNotifyEmail: true,
     },
   });
+  const brandKit = parseBrandKit(tenant?.brandKit);
 
   const ownerUser = await prisma.user.findFirst({
     where: { tenantId, role: { in: ["BROKER_OWNER", "ADMIN"] } },
@@ -159,6 +162,10 @@ export async function POST(req: NextRequest) {
     facts.priceDisplay ? `Price: ${facts.priceDisplay}` : "",
     facts.features ? `Features: ${facts.features}` : "",
     broker.name ? `Brokerage: ${broker.name}` : "",
+    `Brand style: ${brandKit.fontStyle}`,
+    `Brand colors: primary ${brandKit.primaryColor}, accent ${brandKit.accentColor}`,
+    brandKit.slogan ? `Brand slogan: ${brandKit.slogan}` : "",
+    `Required disclaimer: ${brandKit.disclaimer}`,
     "",
     "Write compelling, professional copy. Avoid fair-housing violations.",
     "The headline should be punchy and attention-grabbing (max 60 chars).",
@@ -183,6 +190,7 @@ export async function POST(req: NextRequest) {
 
   const copy = aiCopy.object;
   if (templateStyle) copy.templateStyle = templateStyle;
+  copy.accentColor = brandKit.accentColor || copy.accentColor;
 
   const flyerData: FlyerData = {
     ...copy,
@@ -200,6 +208,8 @@ export async function POST(req: NextRequest) {
     brokerLogo: broker.logo,
     brokerPhone: broker.phone,
     brokerEmail: broker.email,
+    brandSlogan: brandKit.slogan,
+    disclaimer: brandKit.disclaimer,
   };
 
   const html = renderFlyerHtml(flyerData);

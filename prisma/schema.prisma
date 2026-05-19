@@ -65,6 +65,7 @@ model Tenant {
   hubspotListingProps  Json?
 
   defaultTone          String @default("Warm but professional. First-name basis. No pressure.")
+  brandKit             Json?
   complianceStandard   String @default("ga_residential")
   brokerPhone          String?
   flyerNotifyEmail     String?
@@ -88,6 +89,7 @@ model Tenant {
   channelAccounts       ChannelAccount[]
   sendingIdentities     SendingIdentity[]
   marketingAssets       MarketingAsset[]
+  marketingCampaigns    MarketingCampaign[]
   complianceReviews     ComplianceReview[]
   sopTemplates          SopTemplate[]
   integrationMappings   IntegrationMapping[]
@@ -232,6 +234,23 @@ enum MarketingAssetStatus {
   APPROVED
   PUBLISHED
   FAILED
+}
+
+enum MarketingCampaignStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum MarketingCampaignItemStatus {
+  DRAFT
+  NEEDS_REVIEW
+  APPROVED
+  SCHEDULED
+  PUBLISHED
+  SENT
+  SKIPPED
 }
 
 enum ComplianceReviewStatus {
@@ -424,6 +443,7 @@ model Listing {
   touchpoints       Touchpoint[]
   followUpTasks     FollowUpTask[]
   marketingAssets   MarketingAsset[]
+  marketingCampaigns MarketingCampaign[]
   complianceReviews ComplianceReview[]
 
   createdAt DateTime @default(now())
@@ -676,11 +696,61 @@ model MarketingAsset {
   publicUrl       String?
   metadata        Json?
 
+  campaignItems MarketingCampaignItem[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([tenantId, status])
   @@index([tenantId, listingId])
+}
+
+model MarketingCampaign {
+  id               String                  @id @default(cuid())
+  tenantId         String
+  tenant           Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  listingId        String?
+  listing          Listing?                @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  sourceListingKey String?
+  cachedListingId  String?
+  driveFolderId    String?
+  title            String
+  goal             String                  @default("listing_launch")
+  status           MarketingCampaignStatus @default(ACTIVE)
+  summary          String?                 @db.Text
+  recommendedHero  String?
+  brandSnapshot    Json?
+  metadata         Json?
+  items            MarketingCampaignItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, sourceListingKey])
+  @@index([tenantId, cachedListingId])
+  @@index([tenantId, listingId])
+}
+
+model MarketingCampaignItem {
+  id          String                      @id @default(cuid())
+  campaignId  String
+  campaign    MarketingCampaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  assetId     String?
+  asset       MarketingAsset?             @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  stage       String
+  channel     String
+  title       String
+  content     String?                     @db.Text
+  status      MarketingCampaignItemStatus @default(DRAFT)
+  dueAt       DateTime?
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([campaignId, dueAt])
+  @@index([assetId])
 }
 
 model SopTemplate {

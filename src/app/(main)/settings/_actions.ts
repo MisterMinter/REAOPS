@@ -3,6 +3,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { checkBlueBubblesHealth } from "@/lib/channels";
+import { brandKitToJson, parseBrandKit } from "@/lib/marketing/brand-kit";
 import { ensureOpsDefaults } from "@/lib/ops/defaults";
 import { canEditBrokerageConfig } from "@/lib/ops/auth";
 import { uploadTenantLogo } from "@/lib/storage";
@@ -50,6 +51,31 @@ export async function updateTenantProfile(formData: FormData) {
   const defaultTone = String(formData.get("defaultTone") ?? "").trim();
   const brokerPhone = String(formData.get("brokerPhone") ?? "").trim() || null;
   const flyerNotifyEmail = String(formData.get("flyerNotifyEmail") ?? "").trim() || null;
+  const existing = await prisma.tenant.findUnique({
+    where: { id: ctx.tenantId },
+    select: { brandKit: true },
+  });
+  const currentBrandKit = parseBrandKit(existing?.brandKit);
+  const brandKit = {
+    primaryColor:
+      String(formData.get("brandPrimaryColor") ?? "").trim() ||
+      currentBrandKit.primaryColor,
+    secondaryColor:
+      String(formData.get("brandSecondaryColor") ?? "").trim() ||
+      currentBrandKit.secondaryColor,
+    accentColor:
+      String(formData.get("brandAccentColor") ?? "").trim() ||
+      currentBrandKit.accentColor,
+    fontStyle:
+      String(formData.get("brandFontStyle") ?? "").trim() ||
+      currentBrandKit.fontStyle,
+    slogan:
+      String(formData.get("brandSlogan") ?? "").trim() ||
+      currentBrandKit.slogan,
+    disclaimer:
+      String(formData.get("brandDisclaimer") ?? "").trim() ||
+      currentBrandKit.disclaimer,
+  };
 
   await prisma.tenant.update({
     where: { id: ctx.tenantId },
@@ -58,6 +84,7 @@ export async function updateTenantProfile(formData: FormData) {
       defaultTone: defaultTone.length > 0 ? defaultTone : "Warm but professional. First-name basis. No pressure.",
       brokerPhone,
       flyerNotifyEmail,
+      brandKit: brandKitToJson(brandKit),
     },
   });
   revalidatePath("/settings");

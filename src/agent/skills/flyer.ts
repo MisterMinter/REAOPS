@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getDriveClient, listPhotosInFolder } from "@/lib/drive";
 import { renderFlyerHtml, type FlyerData } from "@/lib/flyer-templates";
 import { renderFlyerPdf, renderFlyerPng } from "@/lib/flyer-render";
+import { parseBrandKit, type BrandKit } from "@/lib/marketing/brand-kit";
 import { sendEmail } from "@/lib/gmail-send";
 import { generateMarketingAsset } from "@/lib/ops/workflows";
 import { MarketingAssetType } from "@prisma/client";
@@ -58,6 +59,7 @@ export function flyerTools(ctx: ToolContext) {
         });
         const copy = aiCopy.object;
         if (params.templateStyle) copy.templateStyle = params.templateStyle;
+        copy.accentColor = broker.brandKit.accentColor || copy.accentColor;
 
         const flyerData: FlyerData = {
           ...copy,
@@ -75,6 +77,8 @@ export function flyerTools(ctx: ToolContext) {
           brokerLogo: broker.logo,
           brokerPhone: broker.phone,
           brokerEmail: broker.email,
+          brandSlogan: broker.brandKit.slogan,
+          disclaimer: broker.brandKit.disclaimer,
         };
 
         const html = renderFlyerHtml(flyerData);
@@ -171,6 +175,7 @@ export function flyerTools(ctx: ToolContext) {
         });
         const copy = aiCopy.object;
         if (templateStyle) copy.templateStyle = templateStyle;
+        copy.accentColor = broker.brandKit.accentColor || copy.accentColor;
 
         const flyerData: FlyerData = {
           ...copy,
@@ -188,6 +193,8 @@ export function flyerTools(ctx: ToolContext) {
           brokerLogo: broker.logo,
           brokerPhone: broker.phone,
           brokerEmail: broker.email,
+          brandSlogan: broker.brandKit.slogan,
+          disclaimer: broker.brandKit.disclaimer,
         };
 
         const html = renderFlyerHtml(flyerData);
@@ -275,14 +282,28 @@ async function resolveListing(params: {
   };
 }
 
-type BrokerInfo = { name: string; logo: string | null; phone: string; email: string };
+type BrokerInfo = {
+  name: string;
+  logo: string | null;
+  phone: string;
+  email: string;
+  brandKit: BrandKit;
+};
 
 async function resolveBroker(tenantId: string | null): Promise<BrokerInfo> {
-  if (!tenantId) return { name: "Brokerage", logo: null, phone: "", email: "" };
+  if (!tenantId) {
+    return {
+      name: "Brokerage",
+      logo: null,
+      phone: "",
+      email: "",
+      brandKit: parseBrandKit(null),
+    };
+  }
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
-    select: { brokerageName: true, name: true, logoUrl: true, brokerPhone: true, flyerNotifyEmail: true },
+    select: { brokerageName: true, name: true, logoUrl: true, brandKit: true, brokerPhone: true, flyerNotifyEmail: true },
   });
 
   const users = await prisma.user.findMany({
@@ -297,6 +318,7 @@ async function resolveBroker(tenantId: string | null): Promise<BrokerInfo> {
     logo: tenant?.logoUrl ?? null,
     phone: tenant?.brokerPhone ?? "",
     email: tenant?.flyerNotifyEmail ?? owner?.email ?? "",
+    brandKit: parseBrandKit(tenant?.brandKit),
   };
 }
 
@@ -346,6 +368,10 @@ function buildFlyerPrompt(facts: ListingFacts, broker: BrokerInfo): string {
     facts.priceDisplay ? `Price: ${facts.priceDisplay}` : "",
     facts.features ? `Features: ${facts.features}` : "",
     broker.name ? `Brokerage: ${broker.name}` : "",
+    `Brand style: ${broker.brandKit.fontStyle}`,
+    `Brand colors: primary ${broker.brandKit.primaryColor}, accent ${broker.brandKit.accentColor}`,
+    broker.brandKit.slogan ? `Brand slogan: ${broker.brandKit.slogan}` : "",
+    `Required disclaimer: ${broker.brandKit.disclaimer}`,
     "",
     "Write compelling, professional copy. Avoid fair-housing violations.",
     "The headline should be punchy and attention-grabbing (max 60 chars).",

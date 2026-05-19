@@ -17,6 +17,41 @@ export type MarketingWorkspaceRow = {
   facts: ListingFacts;
 };
 
+export type MarketingCampaignWorkspace = {
+  id: string;
+  title: string;
+  status: string;
+  sourceListingKey: string | null;
+  cachedListingId: string | null;
+  summary: string | null;
+  recommendedHero: string | null;
+  createdAt: string;
+  items: Array<{
+    id: string;
+    stage: string;
+    channel: string;
+    title: string;
+    content: string | null;
+    status: string;
+    dueAt: string | null;
+    asset: {
+      id: string;
+      type: string;
+      title: string;
+      content: string | null;
+    } | null;
+  }>;
+};
+
+type BrandKit = {
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  fontStyle: string;
+  slogan: string;
+  disclaimer: string;
+};
+
 type DriveFile = {
   id?: string | null;
   name?: string | null;
@@ -75,12 +110,38 @@ function CopyBtn({ text, label }: { text: string; label: string }) {
   );
 }
 
+function serializeCampaign(raw: unknown): MarketingCampaignWorkspace {
+  const campaign = raw as MarketingCampaignWorkspace;
+  return {
+    ...campaign,
+    createdAt: String(campaign.createdAt),
+    items: (campaign.items ?? []).map((item) => ({
+      ...item,
+      dueAt: item.dueAt ? String(item.dueAt) : null,
+    })),
+  };
+}
+
+function dateLabel(value: string | null) {
+  if (!value) return "No date";
+  return new Date(value).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function MarketingPackWorkspace({
   listings,
   defaultTone,
+  brandKit,
+  initialCampaigns,
 }: {
   listings: MarketingWorkspaceRow[];
   defaultTone: string;
+  brandKit: BrandKit;
+  initialCampaigns: MarketingCampaignWorkspace[];
 }) {
   const [selectedKey, setSelectedKey] = useState(listings[0]?.key ?? "");
   const selected = useMemo(
@@ -172,6 +233,19 @@ export function MarketingPackWorkspace({
     emailError?: string;
     error?: string;
   } | null>(null);
+  const [launchBusy, setLaunchBusy] = useState(false);
+  const [launchGoal, setLaunchGoal] = useState("listing_launch");
+  const [campaigns, setCampaigns] = useState(initialCampaigns);
+  const [launchError, setLaunchError] = useState<string | null>(null);
+
+  const selectedCampaigns = useMemo(() => {
+    if (!selected) return [];
+    return campaigns.filter(
+      (campaign) =>
+        campaign.sourceListingKey === selected.key ||
+        (selected.cachedListingId && campaign.cachedListingId === selected.cachedListingId)
+    );
+  }, [campaigns, selected]);
 
   const runGenerate = useCallback(async () => {
     if (!aiReady || !selected) return;
@@ -294,6 +368,43 @@ export function MarketingPackWorkspace({
     [selected, draftFacts]
   );
 
+  const runLaunchPack = useCallback(async () => {
+    if (!selected) return;
+    setLaunchBusy(true);
+    setLaunchError(null);
+    const heroContext = hero?.name
+      ? `Selected hero image: ${hero.name}${hero.id ? ` (Drive file ${hero.id})` : ""}`
+      : "No hero selected.";
+
+    try {
+      const res = await fetch("/api/marketing/launch-pack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceListingKey: selected.key,
+          cachedListingId: selected.cachedListingId,
+          driveFolderId: selected.driveFolderId,
+          facts: draftFacts,
+          goal: launchGoal,
+          heroContext,
+          photoNames: photos
+            .map((photo) => photo.name)
+            .filter((name): name is string => Boolean(name)),
+          provider: provider || undefined,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      if (json.campaign) {
+        setCampaigns((current) => [serializeCampaign(json.campaign), ...current]);
+      }
+    } catch (e) {
+      setLaunchError(e instanceof Error ? e.message : "Launch pack failed");
+    } finally {
+      setLaunchBusy(false);
+    }
+  }, [selected, hero, draftFacts, launchGoal, photos, provider]);
+
   if (listings.length === 0) {
     return (
       <p className="text-sm text-[var(--txt2)]">
@@ -319,6 +430,108 @@ export function MarketingPackWorkspace({
             ))}
           </select>
         </div>
+
+        <div className="rounded-lg border border-[var(--gold)]/40 bg-[var(--card)] p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h3 className="font-display text-lg text-[var(--gold)]">Listing Launch Pack</h3>
+              <p className="mt-1 max-w-xl text-sm text-[var(--txt2)]">
+                Create the full campaign: MLS remarks, social feed and story copy, carousel text, email blast, open
+                house push, buyer follow-up script, seller update, and a dated execution timeline.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <span
+                className="inline-block h-5 w-5 rounded-full border border-[var(--border)]"
+                style={{ background: brandKit.primaryColor }}
+              />
+              <span
+                className="inline-block h-5 w-5 rounded-full border border-[var(--border)]"
+                style={{ background: brandKit.accentColor }}
+              />
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+            <select
+              value={launchGoal}
+              onChange={(e) => setLaunchGoal(e.target.value)}
+              className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm"
+            >
+              <option value="listing_launch">Launch this listing</option>
+              <option value="open_house">Promote an open house</option>
+              <option value="price_improvement">Price improvement push</option>
+              <option value="stale_listing_recovery">Recover a stale listing</option>
+            </select>
+            <button
+              type="button"
+              disabled={launchBusy || !selected}
+              onClick={() => void runLaunchPack()}
+              className="rounded-md bg-[var(--gold)] px-5 py-2 text-sm font-semibold text-[var(--bg)] disabled:opacity-50"
+            >
+              {launchBusy ? "Building…" : "Build launch pack"}
+            </button>
+          </div>
+          <div className="mt-3 text-xs text-[var(--txt3)]">
+            Brand style: {brandKit.fontStyle}
+            {brandKit.slogan ? ` · ${brandKit.slogan}` : ""}
+          </div>
+          {launchError && <p className="mt-3 text-sm text-[var(--coral)]">{launchError}</p>}
+        </div>
+
+        {selectedCampaigns.length > 0 && (
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="font-display text-lg text-[var(--gold)]">Campaign Timeline</h3>
+              <span className="text-xs text-[var(--txt3)]">{selectedCampaigns.length} pack(s)</span>
+            </div>
+            <div className="mt-4 space-y-5">
+              {selectedCampaigns.map((campaign) => (
+                <div key={campaign.id} className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-[var(--txt)]">{campaign.title}</div>
+                      <div className="mt-1 text-xs text-[var(--txt3)]">
+                        {campaign.status} · created {dateLabel(campaign.createdAt)}
+                      </div>
+                    </div>
+                    <span className="rounded-full border border-[var(--border2)] px-2 py-1 text-xs text-[var(--teal)]">
+                      {campaign.items.length} actions
+                    </span>
+                  </div>
+                  {campaign.summary && <p className="mt-3 text-sm text-[var(--txt2)]">{campaign.summary}</p>}
+                  {campaign.recommendedHero && (
+                    <p className="mt-2 text-xs text-[var(--txt3)]">Hero recommendation: {campaign.recommendedHero}</p>
+                  )}
+                  <div className="mt-4 space-y-3">
+                    {campaign.items.map((item) => (
+                      <details key={item.id} className="rounded border border-[var(--border)] bg-[var(--card)] p-3">
+                        <summary className="cursor-pointer text-sm text-[var(--txt)]">
+                          <span className="font-medium">{item.title}</span>
+                          <span className="text-[var(--txt3)]">
+                            {" "}
+                            · {item.stage} · {dateLabel(item.dueAt)}
+                          </span>
+                        </summary>
+                        {item.content && (
+                          <div className="mt-3 whitespace-pre-wrap text-sm text-[var(--txt2)]">{item.content}</div>
+                        )}
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <span className="rounded-full border border-[var(--border2)] px-2 py-1 text-xs text-[var(--txt3)]">
+                            {item.status}
+                          </span>
+                          <span className="rounded-full border border-[var(--border2)] px-2 py-1 text-xs text-[var(--txt3)]">
+                            {item.channel}
+                          </span>
+                          {item.content && <CopyBtn text={item.content} label="Copy" />}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
           <h3 className="font-display text-lg text-[var(--gold)]">Listing facts</h3>

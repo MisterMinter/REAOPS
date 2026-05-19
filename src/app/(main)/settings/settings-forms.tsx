@@ -10,6 +10,14 @@ type TenantProps = {
   brokerageName: string | null;
   defaultTone: string;
   logoUrl: string | null;
+  brandKit: {
+    primaryColor: string;
+    secondaryColor: string;
+    accentColor: string;
+    fontStyle: string;
+    slogan: string;
+    disclaimer: string;
+  };
   hubspotListingObject: string;
   brokerPhone: string | null;
   flyerNotifyEmail: string | null;
@@ -145,6 +153,80 @@ export function SettingsForms({
               Default email for flyer delivery. The agent will send flyers here unless told otherwise.
               Emails are sent from the signed-in user&apos;s Google account.
             </p>
+          </div>
+          <div className="grid gap-3 border-t border-[var(--border)] pt-4 sm:grid-cols-3">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+                Primary
+              </label>
+              <input
+                name="brandPrimaryColor"
+                type="color"
+                defaultValue={tenant.brandKit.primaryColor}
+                disabled={!canEdit}
+                className="mt-1 h-10 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] p-1 disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+                Secondary
+              </label>
+              <input
+                name="brandSecondaryColor"
+                type="color"
+                defaultValue={tenant.brandKit.secondaryColor}
+                disabled={!canEdit}
+                className="mt-1 h-10 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] p-1 disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+                Accent
+              </label>
+              <input
+                name="brandAccentColor"
+                type="color"
+                defaultValue={tenant.brandKit.accentColor}
+                disabled={!canEdit}
+                className="mt-1 h-10 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] p-1 disabled:opacity-50"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+              Brand style
+            </label>
+            <input
+              name="brandFontStyle"
+              defaultValue={tenant.brandKit.fontStyle}
+              disabled={!canEdit}
+              placeholder="Modern editorial, luxury serif, clean brokerage"
+              className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)] disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+              Slogan / positioning line
+            </label>
+            <input
+              name="brandSlogan"
+              defaultValue={tenant.brandKit.slogan}
+              disabled={!canEdit}
+              placeholder="Local expertise. Calm execution."
+              className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)] disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+              Marketing disclaimer
+            </label>
+            <textarea
+              name="brandDisclaimer"
+              rows={2}
+              defaultValue={tenant.brandKit.disclaimer}
+              disabled={!canEdit}
+              className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)] disabled:opacity-50"
+            />
           </div>
           {canEdit && (
             <button

@@ -4,6 +4,7 @@ import { MarketingPackWorkspace } from "@/components/marketing/MarketingPackWork
 import type { MarketingWorkspaceRow } from "@/components/marketing/MarketingPackWorkspace";
 import { type DriveFolderRef, listDriveListingFolders } from "@/lib/drive";
 import { getGoogleAccessTokenForUser } from "@/lib/google-account-token";
+import { parseBrandKit } from "@/lib/marketing/brand-kit";
 import type { ListingFacts } from "@/lib/marketing-generate";
 import { getOnboardingSnapshot } from "@/lib/onboarding";
 import { autoLinkDriveFolders, buildMarketingListingRows } from "@/lib/marketing-listings";
@@ -133,7 +134,7 @@ export default async function MarketingPage() {
   const [tenant, driveCfg, cachedFull] = await Promise.all([
     prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { defaultTone: true },
+      select: { defaultTone: true, brandKit: true },
     }),
     prisma.driveConfig.findUnique({
       where: { tenantId },
@@ -198,6 +199,44 @@ export default async function MarketingPage() {
 
   const defaultTone =
     tenant?.defaultTone ?? "Warm but professional. First-name basis. No pressure.";
+  const campaigns = await prisma.marketingCampaign.findMany({
+    where: { tenantId },
+    include: {
+      items: {
+        include: { asset: true },
+        orderBy: [{ dueAt: "asc" }, { createdAt: "asc" }],
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
+  const campaignRows = campaigns.map((campaign) => ({
+    id: campaign.id,
+    title: campaign.title,
+    status: campaign.status,
+    sourceListingKey: campaign.sourceListingKey,
+    cachedListingId: campaign.cachedListingId,
+    summary: campaign.summary,
+    recommendedHero: campaign.recommendedHero,
+    createdAt: campaign.createdAt.toISOString(),
+    items: campaign.items.map((item) => ({
+      id: item.id,
+      stage: item.stage,
+      channel: item.channel,
+      title: item.title,
+      content: item.content,
+      status: item.status,
+      dueAt: item.dueAt?.toISOString() ?? null,
+      asset: item.asset
+        ? {
+            id: item.asset.id,
+            type: item.asset.type,
+            title: item.asset.title,
+            content: item.asset.content,
+          }
+        : null,
+    })),
+  }));
 
   return (
     <div>
@@ -259,7 +298,12 @@ export default async function MarketingPage() {
           </p>
         </section>
       ) : (
-        <MarketingPackWorkspace listings={workspaceListings} defaultTone={defaultTone} />
+        <MarketingPackWorkspace
+          listings={workspaceListings}
+          defaultTone={defaultTone}
+          brandKit={parseBrandKit(tenant?.brandKit)}
+          initialCampaigns={campaignRows}
+        />
       )}
 
       <section className="mt-10 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6">

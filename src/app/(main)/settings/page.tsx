@@ -17,6 +17,7 @@ import {
   uploadTenantLogoFromSettings,
 } from "@/app/(main)/settings/_actions";
 import { SettingsForms } from "@/app/(main)/settings/settings-forms";
+import { parseBrandKit } from "@/lib/marketing/brand-kit";
 import { ensureOpsDefaults } from "@/lib/ops/defaults";
 import { hasLegacyRelativeLogoPath, resolveTenantLogoForDisplay } from "@/lib/tenant-logo";
 import { ApprovalMode, ChannelKind, SendingIdentityType } from "@prisma/client";
@@ -182,6 +183,7 @@ export default async function SettingsPage({
             brokerageName: tenant.brokerageName,
             defaultTone: tenant.defaultTone,
             logoUrl: tenant.logoUrl,
+            brandKit: parseBrandKit(tenant.brandKit),
             hubspotListingObject: tenant.hubspotListingObject,
             brokerPhone: tenant.brokerPhone,
             flyerNotifyEmail: tenant.flyerNotifyEmail,

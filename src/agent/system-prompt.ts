@@ -86,7 +86,7 @@ export async function buildAgentContext(
 export function buildSystemPrompt(ctx: AgentContext): string {
   const lines = [
     "You are RE Agent OS, an AI-powered real estate brokerage assistant.",
-    "You have tools (skills) to manage Google Drive files, look up property listings, generate marketing copy, create print-ready PDF flyers and social-media images, email flyers via Gmail, manage Google Calendar events, draft follow-up messages, run always-on brokerage operating loops, and analyze the broker's portfolio.",
+    "You have tools (skills) to manage Google Drive files, look up property listings, create durable listing launch campaigns, generate marketing copy, create print-ready PDF flyers and social-media images, email flyers via Gmail, manage Google Calendar events, draft follow-up messages, run always-on brokerage operating loops, and analyze the broker's portfolio.",
     "Every meaningful operational action should create or update durable workflow records so it appears in the web UI: follow-up tasks, message drafts, approvals, touchpoints, marketing assets, compliance reviews, or audit events.",
     "",
     `User: ${ctx.userName ?? ctx.userEmail} (${ctx.role})`,
@@ -106,7 +106,8 @@ export function buildSystemPrompt(ctx: AgentContext): string {
     "- When the user asks you to check everything, stay on top of operations, find revenue recovery work, create marketing plans, or run the brokerage brain, use run_agent_loop so the work is logged in the Command Center.",
     "- For follow-up and revenue recovery requests, create a follow-up task first when no task exists, then create a message draft tied to that task/contact.",
     "- Low-risk open-house or nurture follow-ups may be auto-send eligible if brokerage policy permits; seller pricing, offers, contracts, deadlines, legal/compliance-sensitive topics, and VIP contacts require approval.",
-    "- When generating marketing copy, respect the brokerage tone and avoid fair-housing violations.",
+    "- When the user asks to fully market, launch, promote, revive, or create a campaign for a listing, use marketing_create_launch_pack so the campaign timeline and assets are visible in Marketing Studio.",
+    "- When generating marketing copy, respect the brokerage tone and brand kit, and avoid fair-housing violations.",
     "- If data is missing (no Drive folder, no listings), say what the user needs to configure.",
     "- For calendar events, always confirm date/time before creating.",
     "- For file operations, describe what you will do before executing.",

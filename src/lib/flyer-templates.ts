@@ -19,6 +19,8 @@ export type FlyerData = {
   brokerLogo: string | null;
   brokerPhone: string;
   brokerEmail: string;
+  brandSlogan?: string | null;
+  disclaimer?: string | null;
 };
 
 const TEMPLATE_MAP: Record<FlyerData["templateStyle"], (d: FlyerData) => string> = {
@@ -59,6 +61,12 @@ function brokerBlock(d: FlyerData): string {
   </div>`;
 }
 
+function disclaimer(d: FlyerData, color = "#888"): string {
+  return d.disclaimer
+    ? `<div style="margin-top:8px;font-size:8px;line-height:1.35;color:${color}">${esc(d.disclaimer)}</div>`
+    : "";
+}
+
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -79,6 +87,7 @@ body{width:816px;height:1056px;font-family:'Helvetica Neue',Helvetica,Arial,sans
     <div>
       <h1 style="font-size:26px;font-weight:700;color:${d.accentColor};margin-bottom:4px">${esc(d.headline)}</h1>
       <p style="font-size:14px;color:#666;margin-bottom:6px">${esc(d.tagline)}</p>
+      ${d.brandSlogan ? `<p style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#999;margin-bottom:10px">${esc(d.brandSlogan)}</p>` : ""}
       <p style="font-size:18px;font-weight:600;color:#222;margin-top:12px">${esc(d.address)}</p>
       <p style="font-size:13px;color:#888">${esc(d.city)}${d.state ? `, ${esc(d.state)}` : ""} ${esc(d.zip)}</p>
       <div style="display:flex;gap:24px;margin-top:18px;padding:12px 0;border-top:2px solid ${d.accentColor};border-bottom:2px solid ${d.accentColor};font-size:15px;font-weight:600;color:#333">${factsRow(d)}</div>
@@ -87,6 +96,7 @@ body{width:816px;height:1056px;font-family:'Helvetica Neue',Helvetica,Arial,sans
     <div>
       <div style="background:${d.accentColor};color:#fff;text-align:center;padding:10px 20px;border-radius:6px;font-size:14px;font-weight:600">${esc(d.ctaText)}</div>
       ${brokerBlock(d)}
+      ${disclaimer(d)}
     </div>
   </div>
 </div>
@@ -103,6 +113,7 @@ body{width:816px;height:1056px;font-family:Georgia,'Times New Roman',serif;backg
     <img src="${heroSrc(d)}" style="width:100%;height:100%;object-fit:cover;filter:brightness(.85)"/>
     <div style="position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:36px 40px;background:linear-gradient(transparent 40%,rgba(0,0,0,.75))">
       <div style="font-size:13px;letter-spacing:4px;text-transform:uppercase;color:${d.accentColor};margin-bottom:8px">${esc(d.tagline)}</div>
+      ${d.brandSlogan ? `<div style="font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#d7c28d;margin-bottom:8px">${esc(d.brandSlogan)}</div>` : ""}
       <div style="font-size:36px;font-weight:700;line-height:1.15">${esc(d.headline)}</div>
       <div style="font-size:42px;font-weight:700;color:${d.accentColor};margin-top:6px">${esc(d.priceDisplay)}</div>
     </div>
@@ -121,6 +132,7 @@ body{width:816px;height:1056px;font-family:Georgia,'Times New Roman',serif;backg
       </div>
       <div style="background:${d.accentColor};color:#0d0d0d;padding:8px 18px;border-radius:4px;font-size:12px;font-weight:700;font-family:sans-serif">${esc(d.ctaText)}</div>
     </div>
+    ${disclaimer(d, "#776")}
   </div>
 </div>
 </body></html>`;
@@ -140,6 +152,7 @@ body{width:816px;height:1056px;font-family:'Helvetica Neue',Helvetica,Arial,sans
       <div style="font-size:42px;font-weight:800;line-height:1.1;margin-bottom:8px">${esc(d.priceDisplay)}</div>
       <div style="width:50px;height:4px;background:#fff;opacity:.5;margin-bottom:18px"></div>
       <h1 style="font-size:22px;font-weight:700;line-height:1.3;margin-bottom:6px">${esc(d.headline)}</h1>
+      ${d.brandSlogan ? `<p style="font-size:10px;letter-spacing:2px;text-transform:uppercase;opacity:.65;margin-bottom:8px">${esc(d.brandSlogan)}</p>` : ""}
       <p style="font-size:13px;opacity:.85;margin-bottom:18px">${esc(d.tagline)}</p>
       <p style="font-size:16px;font-weight:600">${esc(d.address)}</p>
       <p style="font-size:12px;opacity:.7">${esc(d.city)}${d.state ? `, ${esc(d.state)}` : ""} ${esc(d.zip)}</p>
@@ -152,6 +165,7 @@ body{width:816px;height:1056px;font-family:'Helvetica Neue',Helvetica,Arial,sans
         ${d.brokerLogo ? `<img src="${d.brokerLogo}" alt="" style="height:24px;margin-right:8px;vertical-align:middle;filter:brightness(10);object-fit:contain"/>` : ""}
         <strong>${esc(d.brokerName)}</strong><br/>${esc(d.brokerPhone)}&nbsp;&middot;&nbsp;${esc(d.brokerEmail)}
       </div>
+      ${disclaimer(d, "rgba(255,255,255,.62)")}
     </div>
   </div>
 </div>
