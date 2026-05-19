@@ -1,4 +1,8 @@
 [phases.setup]
+nixPkgs = [
+  "...",
+  "chromium",
+]
 aptPkgs = [
   "chromium",
   "libnss3",

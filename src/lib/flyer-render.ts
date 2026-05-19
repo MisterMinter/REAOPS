@@ -2,18 +2,34 @@ import type { Browser } from "puppeteer-core";
 
 let browserPromise: Promise<Browser> | null = null;
 
+const DEFAULT_CHROMIUM_ARGS = [
+  "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-dev-shm-usage",
+  "--disable-gpu",
+  "--font-render-hinting=none",
+];
+
 async function getBrowser(): Promise<Browser> {
   if (browserPromise) return browserPromise;
 
   browserPromise = (async () => {
     const puppeteer = await import("puppeteer-core");
     const { existsSync } = await import("fs");
+    const { join } = await import("path");
 
     let executablePath: string | undefined;
+    let args = DEFAULT_CHROMIUM_ARGS;
 
-    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-      const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    const envPaths = [
+      process.env.PUPPETEER_EXECUTABLE_PATH,
+      process.env.CHROME_PATH,
+      process.env.GOOGLE_CHROME_BIN,
+    ].filter(Boolean) as string[];
+
+    for (const envPath of envPaths) {
       if (existsSync(envPath)) executablePath = envPath;
+      if (executablePath) break;
     }
 
     if (!executablePath) {
@@ -28,9 +44,18 @@ async function getBrowser(): Promise<Browser> {
     }
 
     if (!executablePath) {
+      const names = ["chromium", "chromium-browser", "google-chrome-stable", "google-chrome"];
+      for (const dir of (process.env.PATH ?? "").split(":").filter(Boolean)) {
+        executablePath = names.map((name) => join(dir, name)).find((p) => existsSync(p));
+        if (executablePath) break;
+      }
+    }
+
+    if (!executablePath) {
       try {
         const chromium = await import("@sparticuz/chromium");
         executablePath = await chromium.default.executablePath();
+        args = [...chromium.default.args, ...DEFAULT_CHROMIUM_ARGS];
       } catch {
         // @sparticuz/chromium not available or broken
       }
@@ -45,16 +70,16 @@ async function getBrowser(): Promise<Browser> {
     return puppeteer.default.launch({
       executablePath,
       headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--single-process",
-        "--font-render-hinting=none",
-      ],
+      args: [...new Set(args)],
     });
-  })();
+  })().catch((e) => {
+    browserPromise = null;
+    throw new Error(
+      `Chromium launch failed. Ensure the deployment image includes Chromium runtime libraries such as libnspr4 and libnss3, or set PUPPETEER_EXECUTABLE_PATH to a working system Chrome/Chromium binary. ${
+        e instanceof Error ? e.message : "Unknown launch error."
+      }`
+    );
+  });
 
   return browserPromise;
 }
