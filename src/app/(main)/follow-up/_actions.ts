@@ -6,6 +6,7 @@ import {
   approveDraft,
   createFollowUpTask,
   draftMessage,
+  reviseDraft,
   sendApprovedMessage,
 } from "@/lib/ops/workflows";
 import { requireTenantActor } from "@/lib/ops/auth";
@@ -68,6 +69,19 @@ export async function rejectDraftAction(formData: FormData) {
     draftId: String(formData.get("draftId") ?? ""),
     approve: false,
     reason: String(formData.get("reason") ?? "").trim() || "Rejected in follow-up queue.",
+  });
+  revalidatePath("/follow-up");
+  revalidatePath("/command");
+}
+
+export async function reviseDraftAction(formData: FormData) {
+  const actor = await requireTenantActor();
+  await reviseDraft({
+    actor,
+    draftId: String(formData.get("draftId") ?? ""),
+    subject: String(formData.get("subject") ?? "").trim() || null,
+    recipient: String(formData.get("recipient") ?? "").trim() || null,
+    body: String(formData.get("body") ?? ""),
   });
   revalidatePath("/follow-up");
   revalidatePath("/command");

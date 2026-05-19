@@ -1,10 +1,14 @@
 import Link from "next/link";
-import { AgentLoopKind } from "@prisma/client";
+import { AgentLoopKind, AgentNotificationSeverity } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { buildOpsCommandCenter, contactDisplayName } from "@/lib/ops/workflows";
 import { ensureOpsDefaults } from "@/lib/ops/defaults";
-import { runAgentLoopAction } from "@/app/(main)/command/_actions";
+import {
+  markAllNotificationsReadAction,
+  markNotificationReadAction,
+  runAgentLoopAction,
+} from "@/app/(main)/command/_actions";
 
 function dateLabel(d: Date | null) {
   if (!d) return "No due date";
@@ -25,7 +29,7 @@ export default async function CommandCenterPage() {
   }
 
   await ensureOpsDefaults(prisma, user.tenantId);
-  const [data, loops, runs] = await Promise.all([
+  const [data, loops, runs, notifications] = await Promise.all([
     buildOpsCommandCenter(prisma, user.tenantId),
     prisma.agentLoop.findMany({
       where: { tenantId: user.tenantId },
@@ -35,6 +39,16 @@ export default async function CommandCenterPage() {
       where: { tenantId: user.tenantId },
       include: { loop: true },
       orderBy: { startedAt: "desc" },
+      take: 8,
+    }),
+    prisma.agentNotification.findMany({
+      where: {
+        tenantId: user.tenantId,
+        readAt: null,
+        OR: [{ userId: user.id }, { userId: null }],
+      },
+      include: { agentRun: { include: { loop: true } } },
+      orderBy: { createdAt: "desc" },
       take: 8,
     }),
   ]);
@@ -49,12 +63,67 @@ export default async function CommandCenterPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Metric label="Open follow-ups" value={data.openTasks.length} tone="gold" />
         <Metric label="Pending approvals" value={data.approvals.length} tone="amber" />
         <Metric label="Stale contacts" value={data.staleContacts.length} tone="coral" />
         <Metric label="Drafts awaiting review" value={data.waitingDraftCount} tone="teal" />
+        <Metric label="Agent updates" value={notifications.length} tone="teal" />
       </div>
+
+      {notifications.length > 0 && (
+        <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-display text-xl text-[var(--gold)]">Agent Updates</h2>
+              <p className="mt-1 text-sm text-[var(--txt2)]">
+                New work and recommendations created by the always-on loops.
+              </p>
+            </div>
+            <form action={markAllNotificationsReadAction}>
+              <button type="submit" className="rounded-md border border-[var(--border2)] px-3 py-1.5 text-xs text-[var(--txt2)] hover:bg-[var(--surface)]">
+                Mark all read
+              </button>
+            </form>
+          </div>
+          <div className="mt-4 space-y-3">
+            {notifications.map((notification) => (
+              <div key={notification.id} className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`text-xs font-semibold uppercase tracking-wider ${severityColor(notification.severity)}`}>
+                        {notification.severity}
+                      </span>
+                      <span className="text-xs text-[var(--txt3)]">{notification.createdAt.toLocaleString()}</span>
+                    </div>
+                    <div className="mt-1 font-medium text-[var(--txt)]">{notification.title}</div>
+                    <p className="mt-1 text-sm text-[var(--txt2)]">{notification.body}</p>
+                    {notification.agentRun?.loop && (
+                      <p className="mt-1 text-xs text-[var(--txt3)]">
+                        {notification.agentRun.loop.name} · {notification.agentRun.trigger}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    {notification.href && (
+                      <Link href={notification.href} className="rounded-md bg-[var(--teal)]/20 px-3 py-1.5 text-xs font-semibold text-[var(--teal)]">
+                        Open
+                      </Link>
+                    )}
+                    <form action={markNotificationReadAction}>
+                      <input type="hidden" name="notificationId" value={notification.id} />
+                      <button type="submit" className="rounded-md border border-[var(--border2)] px-3 py-1.5 text-xs text-[var(--txt2)]">
+                        Dismiss
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -238,6 +307,13 @@ export default async function CommandCenterPage() {
       </div>
     </div>
   );
+}
+
+function severityColor(severity: AgentNotificationSeverity) {
+  if (severity === AgentNotificationSeverity.CRITICAL) return "text-[var(--coral)]";
+  if (severity === AgentNotificationSeverity.WARNING) return "text-[var(--amber)]";
+  if (severity === AgentNotificationSeverity.ACTION) return "text-[var(--teal)]";
+  return "text-[var(--txt3)]";
 }
 
 function Metric({ label, value, tone }: { label: string; value: number; tone: "gold" | "amber" | "coral" | "teal" }) {

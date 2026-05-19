@@ -8,6 +8,7 @@ import {
   createFollowUpTaskAction,
   draftMessageAction,
   rejectDraftAction,
+  reviseDraftAction,
   sendDraftAction,
 } from "@/app/(main)/follow-up/_actions";
 
@@ -194,6 +195,34 @@ export default async function FollowUpPage() {
                     </span>
                   </div>
                   <p className="mt-3 whitespace-pre-wrap text-sm text-[var(--txt2)]">{draft.body}</p>
+                  {draft.status !== MessageDraftStatus.SENT &&
+                    draft.status !== MessageDraftStatus.SKIPPED &&
+                    draft.status !== MessageDraftStatus.FAILED && (
+                      <form action={reviseDraftAction} className="mt-4 grid gap-3">
+                        <input type="hidden" name="draftId" value={draft.id} />
+                        <input
+                          name="subject"
+                          defaultValue={draft.subject ?? ""}
+                          placeholder="Subject"
+                          className="rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                        />
+                        <input
+                          name="recipient"
+                          defaultValue={draft.recipient ?? ""}
+                          placeholder="Recipient"
+                          className="rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                        />
+                        <textarea
+                          name="body"
+                          rows={5}
+                          defaultValue={draft.body}
+                          className="rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+                        />
+                        <button type="submit" className="w-fit rounded-md border border-[var(--teal)] px-3 py-1.5 text-xs font-semibold text-[var(--teal)]">
+                          Save revision
+                        </button>
+                      </form>
+                    )}
                   <div className="mt-4 flex flex-wrap gap-2">
                     {draft.status === MessageDraftStatus.WAITING_APPROVAL && (
                       <>

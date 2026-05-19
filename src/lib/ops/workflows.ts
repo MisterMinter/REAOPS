@@ -283,6 +283,95 @@ export async function approveDraft(input: {
   return updated;
 }
 
+export async function reviseDraft(input: {
+  prisma?: PrismaClient;
+  actor: Actor;
+  draftId: string;
+  subject?: string | null;
+  body: string;
+  recipient?: string | null;
+}) {
+  const prisma = input.prisma ?? defaultPrisma;
+  const draft = await prisma.messageDraft.findFirst({
+    where: { id: input.draftId, tenantId: input.actor.tenantId },
+    include: { task: true, contact: true },
+  });
+  if (!draft) throw new Error("Draft not found.");
+  if (
+    draft.status === MessageDraftStatus.SENT ||
+    draft.status === MessageDraftStatus.FAILED ||
+    draft.status === MessageDraftStatus.SKIPPED
+  ) {
+    throw new Error("Only active drafts can be revised.");
+  }
+
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: input.actor.tenantId },
+    select: { defaultApprovalMode: true },
+  });
+  const subject = input.subject ?? draft.subject;
+  const body = input.body.trim();
+  if (!body) throw new Error("Draft body is required.");
+  const recipient = input.recipient ?? draft.recipient;
+  const risk = classifyMessageRisk(`${subject ?? ""}\n${body}\n${draft.task?.context ?? ""}`);
+  const mode = tenant?.defaultApprovalMode ?? ApprovalMode.AUTO_SEND_LOW_RISK;
+  const needsApproval = requiresApproval(mode, risk);
+
+  await prisma.approval.updateMany({
+    where: {
+      tenantId: input.actor.tenantId,
+      draftId: draft.id,
+      status: ApprovalStatus.PENDING,
+    },
+    data: {
+      status: ApprovalStatus.REJECTED,
+      decidedById: input.actor.id,
+      decidedAt: new Date(),
+      reason: "Superseded by a revised draft.",
+    },
+  });
+
+  const updated = await prisma.messageDraft.update({
+    where: { id: draft.id },
+    data: {
+      subject,
+      body,
+      recipient,
+      risk,
+      requiresApproval: needsApproval,
+      status: needsApproval ? MessageDraftStatus.WAITING_APPROVAL : MessageDraftStatus.APPROVED,
+      approvedAt: null,
+    },
+  });
+
+  if (needsApproval) {
+    await prisma.approval.create({
+      data: {
+        tenantId: input.actor.tenantId,
+        draftId: draft.id,
+        taskId: draft.taskId,
+        requestedForId: draft.task?.ownerUserId ?? draft.contact?.ownerUserId ?? input.actor.id,
+      },
+    });
+  }
+
+  if (draft.taskId) {
+    await prisma.followUpTask.update({
+      where: { id: draft.taskId },
+      data: {
+        status: needsApproval ? FollowUpTaskStatus.WAITING_APPROVAL : FollowUpTaskStatus.APPROVED,
+        risk,
+      },
+    });
+  }
+
+  await logAudit(prisma, input.actor, "message.revise", "MessageDraft", draft.id, {
+    risk,
+    requiresApproval: needsApproval,
+  });
+  return updated;
+}
+
 export async function sendApprovedMessage(input: {
   prisma?: PrismaClient;
   actor: Actor;

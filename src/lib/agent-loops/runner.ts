@@ -1,5 +1,6 @@
 import {
   AgentLoopKind,
+  AgentNotificationSeverity,
   AgentRunStatus,
   ChannelKind,
   ComplianceReviewStatus,
@@ -11,6 +12,7 @@ import {
 import { generateText } from "ai";
 import { resolveLanguageModel } from "@/lib/ai-chat";
 import { ensureOpsDefaults } from "@/lib/ops/defaults";
+import { createAgentNotifications } from "@/lib/ops/notifications";
 import {
   contactDisplayName,
   createComplianceReview,
@@ -114,6 +116,26 @@ export async function runAgentLoop(input: {
       },
     });
 
+    if (shouldNotify(input.trigger, input.kind, result.actions.length)) {
+      await createAgentNotifications({
+        prisma,
+        tenantId: input.tenantId,
+        agentRunId: run.id,
+        title: notificationTitle(loop.name, result.actions.length),
+        body: result.summary,
+        href: result.actions.length === 1 ? result.actions[0].href ?? "/command" : "/command",
+        severity:
+          result.actions.length > 0
+            ? AgentNotificationSeverity.ACTION
+            : AgentNotificationSeverity.INFO,
+        metadata: {
+          kind: input.kind,
+          trigger: input.trigger ?? "manual",
+          actionCount: result.actions.length,
+        },
+      });
+    }
+
     return { runId: run.id, kind: input.kind, ...result };
   } catch (e) {
     const error = e instanceof Error ? e.message : "Agent loop failed.";
@@ -124,6 +146,16 @@ export async function runAgentLoop(input: {
         error,
         finishedAt: new Date(),
       },
+    });
+    await createAgentNotifications({
+      prisma,
+      tenantId: input.tenantId,
+      agentRunId: run.id,
+      title: `${loop.name} needs attention`,
+      body: error,
+      href: "/command",
+      severity: AgentNotificationSeverity.WARNING,
+      metadata: { kind: input.kind, trigger: input.trigger ?? "manual" },
     });
     throw e;
   }
@@ -552,4 +584,20 @@ function loopName(kind: AgentLoopKind): string {
     case AgentLoopKind.COMPLIANCE_SWEEP:
       return "Compliance Sweep";
   }
+}
+
+function shouldNotify(
+  trigger: string | undefined,
+  kind: AgentLoopKind,
+  actionCount: number
+) {
+  if (actionCount > 0) return true;
+  if ((trigger ?? "manual") !== "cron") return true;
+  return kind === AgentLoopKind.DAILY_OPS;
+}
+
+function notificationTitle(loopName: string, actionCount: number) {
+  if (actionCount === 0) return `${loopName} checked in`;
+  if (actionCount === 1) return `${loopName} created 1 action`;
+  return `${loopName} created ${actionCount} actions`;
 }
