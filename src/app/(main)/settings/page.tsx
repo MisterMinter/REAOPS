@@ -8,6 +8,8 @@ import {
   checkBlueBubblesAction,
   configureBlueBubblesAction,
   removeZillowProfileSource,
+  disconnectHubSpotAction,
+  syncHubSpotAction,
   syncZillowProfileSourceAction,
   updateAgentLoopAction,
   updateAutomationPolicyAction,
@@ -29,6 +31,8 @@ export default async function SettingsPage({
     error?: string;
     saved?: string;
     imported?: string;
+    contacts?: string;
+    listings?: string;
     detail?: string;
   }>;
 }) {
@@ -92,8 +96,8 @@ export default async function SettingsPage({
       <div>
         <h1 className="font-display text-3xl text-[var(--txt)]">Settings</h1>
         <p className="mt-2 max-w-2xl text-[var(--txt2)]">
-          Brokerage profile, Google Drive listing photos folder, and integration status. HubSpot and
-          Buffer OAuth routes ship next; you can still prepare Drive and branding here.
+          Brokerage profile, Google Drive listing photos folder, HubSpot sync, and integration status.
+          Buffer social scheduling still uses manual copy until its OAuth flow ships.
         </p>
       </div>
 
@@ -155,6 +159,21 @@ export default async function SettingsPage({
           Zillow sync finished. Imported {q.imported ?? "0"} listing link(s). Check Marketing.
         </p>
       )}
+      {q.saved === "hubspot-connected" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          HubSpot connected. Imported {q.contacts ?? "0"} contact(s) and {q.listings ?? "0"} listing/deal record(s).
+        </p>
+      )}
+      {q.saved === "hubspot-sync" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          HubSpot sync finished. Imported {q.contacts ?? "0"} contact(s) and {q.listings ?? "0"} listing/deal record(s).
+        </p>
+      )}
+      {q.saved === "hubspot-disconnect" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          HubSpot disconnected for this brokerage.
+        </p>
+      )}
       {q.error === "zillow-url" && (
         <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
           Enter a valid Zillow profile URL.
@@ -169,6 +188,11 @@ export default async function SettingsPage({
         <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
           Zillow sync failed{q.detail ? `: ${decodeURIComponent(q.detail)}` : ""}. Imported {q.imported ?? "0"} before
           error.
+        </p>
+      )}
+      {q.error?.startsWith("hubspot") && (
+        <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
+          HubSpot error{q.detail ? `: ${decodeURIComponent(q.detail)}` : ""}.
         </p>
       )}
 
@@ -207,6 +231,8 @@ export default async function SettingsPage({
           addZillowProfile={addZillowProfileSource}
           removeZillowProfile={removeZillowProfileSource}
           syncZillowProfile={syncZillowProfileSourceAction}
+          syncHubSpot={syncHubSpotAction}
+          disconnectHubSpot={disconnectHubSpotAction}
         />
       )}
 

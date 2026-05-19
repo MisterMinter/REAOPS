@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { checkBlueBubblesHealth } from "@/lib/channels";
 import { brandKitToJson, parseBrandKit } from "@/lib/marketing/brand-kit";
+import { disconnectHubSpot, syncHubSpotForTenant } from "@/lib/hubspot";
 import { ensureOpsDefaults } from "@/lib/ops/defaults";
 import { canEditBrokerageConfig } from "@/lib/ops/auth";
 import { uploadTenantLogo } from "@/lib/storage";
@@ -197,6 +198,39 @@ export async function syncZillowProfileSourceAction(formData: FormData) {
     );
   }
   redirect(`/settings?saved=zillow-sync&imported=${result.imported}`);
+}
+
+export async function syncHubSpotAction() {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+
+  let summary: Awaited<ReturnType<typeof syncHubSpotForTenant>>;
+  try {
+    summary = await syncHubSpotForTenant({
+      prisma,
+      tenantId: ctx.tenantId,
+      actorId: ctx.userId,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "HubSpot sync failed.";
+    redirect(`/settings?error=hubspot-sync&detail=${encodeURIComponent(detail)}`);
+  }
+
+  revalidatePath("/settings");
+  revalidatePath("/marketing");
+  revalidatePath("/contacts");
+  revalidatePath("/follow-up");
+  redirect(
+    `/settings?saved=hubspot-sync&contacts=${summary.contactsImported}&listings=${summary.listingsImported}`
+  );
+}
+
+export async function disconnectHubSpotAction() {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+  await disconnectHubSpot({ prisma, tenantId: ctx.tenantId });
+  revalidatePath("/settings");
+  redirect("/settings?saved=hubspot-disconnect");
 }
 
 export async function updateAutomationPolicyAction(formData: FormData) {

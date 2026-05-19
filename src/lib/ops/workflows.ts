@@ -16,6 +16,7 @@ import { generateText } from "ai";
 import { resolveLanguageModel } from "@/lib/ai-chat";
 import { sendChannelMessage } from "@/lib/channels";
 import { getGoogleAccessTokenForUser } from "@/lib/google-account-token";
+import { syncPendingTouchpointsToHubSpot, syncTouchpointToHubSpot } from "@/lib/hubspot";
 import { ensureOpsDefaults } from "@/lib/ops/defaults";
 import { prisma as defaultPrisma } from "@/lib/prisma";
 
@@ -425,7 +426,7 @@ export async function sendApprovedMessage(input: {
     },
   });
 
-  await logTouchpoint({
+  const touchpoint = await logTouchpoint({
     prisma,
     actor: input.actor,
     contactId: draft.contactId,
@@ -438,6 +439,17 @@ export async function sendApprovedMessage(input: {
     externalId: result.externalId ?? null,
     occurredAt: now,
   });
+  try {
+    await syncTouchpointToHubSpot({
+      prisma,
+      tenantId: input.actor.tenantId,
+      touchpointId: touchpoint.id,
+    });
+  } catch (error) {
+    await logAudit(prisma, input.actor, "hubspot.touchpoint_sync_failed", "Touchpoint", touchpoint.id, {
+      error: error instanceof Error ? error.message : "HubSpot touchpoint sync failed.",
+    });
+  }
 
   if (draft.taskId) {
     await prisma.followUpTask.update({
@@ -637,20 +649,16 @@ export async function syncToHubSpot(input: {
   summary?: Prisma.InputJsonValue;
 }) {
   const prisma = input.prisma ?? defaultPrisma;
-  const run = await prisma.syncRun.create({
-    data: {
-      tenantId: input.actor.tenantId,
-      provider: "hubspot",
-      direction: "outbound",
-      status: "SUCCEEDED",
-      finishedAt: new Date(),
-      summary:
-        input.summary ??
-        ({ note: "HubSpot sync adapter placeholder recorded workflow state for future push." } as Prisma.InputJsonValue),
-    },
+  const result = await syncPendingTouchpointsToHubSpot({
+    prisma,
+    tenantId: input.actor.tenantId,
+    actorId: input.actor.id,
   });
-  await logAudit(prisma, input.actor, "hubspot.sync.placeholder", "SyncRun", run.id);
-  return run;
+  await logAudit(prisma, input.actor, "hubspot.sync.outbound_requested", undefined, undefined, {
+    requestedSummary: input.summary ?? null,
+    result,
+  });
+  return result;
 }
 
 async function generateFollowUpCopy(input: {
