@@ -1,48 +1,12 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
+import {
+  createBufferDraft,
+  listBufferProfiles,
+} from "@/lib/buffer";
 import { reviewContent, reviewToJson } from "@/lib/content-review";
 import { createComplianceReview } from "@/lib/ops/workflows";
-
-const BUFFER_API = "https://api.bufferapp.com/1";
-
-function getBufferToken(): string | null {
-  return process.env.BUFFER_ACCESS_TOKEN ?? null;
-}
-
-async function bufferGet(path: string, token: string): Promise<unknown> {
-  const res = await fetch(`${BUFFER_API}${path}?access_token=${encodeURIComponent(token)}`, {
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Buffer API ${path} => ${res.status}: ${text.slice(0, 300)}`);
-  }
-  return res.json();
-}
-
-async function bufferPost(path: string, token: string, params: Record<string, string | string[]>): Promise<unknown> {
-  const body = new URLSearchParams();
-  for (const [key, val] of Object.entries(params)) {
-    if (Array.isArray(val)) {
-      for (const v of val) body.append(`${key}[]`, v);
-    } else {
-      body.append(key, val);
-    }
-  }
-  body.append("access_token", token);
-
-  const res = await fetch(`${BUFFER_API}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Buffer API POST ${path} => ${res.status}: ${text.slice(0, 300)}`);
-  }
-  return res.json();
-}
 
 export function bufferTools(ctx: ToolContext) {
   return {
@@ -51,25 +15,9 @@ export function bufferTools(ctx: ToolContext) {
         "List Buffer social media profiles connected to this account. Returns profile IDs, service names, and formatted usernames.",
       parameters: z.object({}),
       execute: async () => {
-        const token = getBufferToken();
-        if (!token) {
-          return { error: "Buffer is not configured. Set BUFFER_ACCESS_TOKEN on the server." };
-        }
+        if (!ctx.tenantId) return { error: "No brokerage assigned." };
         try {
-          const profiles = (await bufferGet("/profiles.json", token)) as Array<{
-            id: string;
-            service: string;
-            formatted_username?: string;
-            default?: boolean;
-          }>;
-          return {
-            profiles: profiles.map((p) => ({
-              id: p.id,
-              service: p.service,
-              username: p.formatted_username ?? "unknown",
-              default: p.default ?? false,
-            })),
-          };
+          return { profiles: await listBufferProfiles({ tenantId: ctx.tenantId }) };
         } catch (e) {
           return { error: e instanceof Error ? e.message : "Buffer API error" };
         }
@@ -96,10 +44,6 @@ export function bufferTools(ctx: ToolContext) {
       }),
       execute: async ({ text, profileIds, scheduledAt, mediaUrl }) => {
         if (!ctx.tenantId) return { error: "No brokerage assigned." };
-        const token = getBufferToken();
-        if (!token) {
-          return { error: "Buffer is not configured. Set BUFFER_ACCESS_TOKEN on the server." };
-        }
         const review = await reviewContent({
           tenantId: ctx.tenantId,
           actorId: ctx.userId,
@@ -128,24 +72,13 @@ export function bufferTools(ctx: ToolContext) {
         }
 
         try {
-          let ids = profileIds ?? [];
-          if (ids.length === 0) {
-            const profiles = (await bufferGet("/profiles.json", token)) as Array<{ id: string }>;
-            ids = profiles.map((p) => p.id);
-          }
-          if (ids.length === 0) {
-            return { error: "No Buffer profiles found. Connect at least one social account in Buffer." };
-          }
-
-          const params: Record<string, string | string[]> = {
+          const result = await createBufferDraft({
+            tenantId: ctx.tenantId,
             text,
-            profile_ids: ids,
-            draft: "true",
-          };
-          if (scheduledAt) params.scheduled_at = scheduledAt;
-          if (mediaUrl) params["media[photo]"] = mediaUrl;
-
-          const result = await bufferPost("/updates/create.json", token, params);
+            profileIds,
+            scheduledAt,
+            mediaUrl,
+          });
           return { success: true, result };
         } catch (e) {
           return { error: e instanceof Error ? e.message : "Buffer API error" };

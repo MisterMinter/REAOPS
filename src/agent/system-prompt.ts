@@ -44,6 +44,7 @@ export async function buildAgentContext(
   let contactCount = 0;
   let flyerNotifyEmail: string | null = null;
   let brokerPhone: string | null = null;
+  let bufferConfigured = !!process.env.BUFFER_ACCESS_TOKEN;
 
   if (user.tenantId) {
     const t = await prisma.tenant.findUnique({
@@ -55,6 +56,7 @@ export async function buildAgentContext(
         brokerPhone: true,
         flyerNotifyEmail: true,
         driveConfig: { select: { rootFolderId: true } },
+        bufferTokens: { select: { id: true } },
         _count: { select: { cachedListings: true, cachedContacts: true } },
       },
     });
@@ -66,10 +68,9 @@ export async function buildAgentContext(
       contactCount = t._count.cachedContacts;
       flyerNotifyEmail = t.flyerNotifyEmail ?? null;
       brokerPhone = t.brokerPhone ?? null;
+      bufferConfigured = Boolean(t.bufferTokens || process.env.BUFFER_ACCESS_TOKEN?.trim());
     }
   }
-
-  const bufferConfigured = !!process.env.BUFFER_ACCESS_TOKEN;
 
   return {
     userId: user.id,
@@ -103,7 +104,7 @@ export function buildSystemPrompt(ctx: AgentContext, memory?: AgentMemoryContext
     `Cached listings: ${ctx.listingCount}. Cached contacts: ${ctx.contactCount}.`,
     ctx.bufferConfigured
       ? "Buffer: connected — you can list profiles and create social media drafts."
-      : "Buffer: not configured (BUFFER_ACCESS_TOKEN missing). Mention this if user asks about social posting.",
+      : "Buffer: not configured. Mention this if user asks about social posting.",
     "",
     memory ? formatAgentMemoryForPrompt(memory) : "",
     "",

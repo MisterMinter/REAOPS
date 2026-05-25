@@ -7,8 +7,10 @@ import {
   addZillowProfileSource,
   checkBlueBubblesAction,
   configureBlueBubblesAction,
+  disconnectBufferAction,
   removeZillowProfileSource,
   disconnectHubSpotAction,
+  selectBufferProfilesAction,
   syncHubSpotAction,
   syncZillowProfileSourceAction,
   updateAgentLoopAction,
@@ -19,6 +21,7 @@ import {
   uploadTenantLogoFromSettings,
 } from "@/app/(main)/settings/_actions";
 import { SettingsForms } from "@/app/(main)/settings/settings-forms";
+import { listBufferProfiles } from "@/lib/buffer";
 import { parseBrandKit } from "@/lib/marketing/brand-kit";
 import { ensureOpsDefaults } from "@/lib/ops/defaults";
 import { hasLegacyRelativeLogoPath, resolveTenantLogoForDisplay } from "@/lib/tenant-logo";
@@ -58,7 +61,7 @@ export default async function SettingsPage({
         where: { id: user.tenantId },
         include: {
           hubspotTokens: { select: { id: true, hubId: true, updatedAt: true } },
-          bufferTokens: { select: { id: true, updatedAt: true } },
+          bufferTokens: { select: { id: true, updatedAt: true, profileIds: true } },
           driveConfig: { select: { rootFolderId: true, updatedAt: true } },
           zillowProfileSources: { orderBy: { createdAt: "asc" } },
         },
@@ -76,6 +79,10 @@ export default async function SettingsPage({
   if (user.tenantId) {
     await ensureOpsDefaults(prisma, user.tenantId);
   }
+
+  const bufferProfiles = user.tenantId
+    ? await listBufferProfiles({ prisma, tenantId: user.tenantId }).catch(() => [])
+    : [];
 
   const opsConfig = user.tenantId
     ? await prisma.tenant.findUnique({
@@ -96,8 +103,7 @@ export default async function SettingsPage({
       <div>
         <h1 className="font-display text-3xl text-[var(--txt)]">Settings</h1>
         <p className="mt-2 max-w-2xl text-[var(--txt2)]">
-          Brokerage profile, Google Drive listing photos folder, HubSpot sync, and integration status.
-          Buffer social scheduling still uses manual copy until its OAuth flow ships.
+          Brokerage profile, Google Drive listing photos folder, HubSpot sync, Buffer social profiles, and integration status.
         </p>
       </div>
 
@@ -174,6 +180,21 @@ export default async function SettingsPage({
           HubSpot disconnected for this brokerage.
         </p>
       )}
+      {q.saved === "buffer-connected" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          Buffer connected. Select the social profiles REAOPS can draft to.
+        </p>
+      )}
+      {q.saved === "buffer-profiles" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          Buffer profiles saved.
+        </p>
+      )}
+      {q.saved === "buffer-disconnect" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          Buffer disconnected for this brokerage.
+        </p>
+      )}
       {q.error === "zillow-url" && (
         <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
           Enter a valid Zillow profile URL.
@@ -193,6 +214,11 @@ export default async function SettingsPage({
       {q.error?.startsWith("hubspot") && (
         <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
           HubSpot error{q.detail ? `: ${decodeURIComponent(q.detail)}` : ""}.
+        </p>
+      )}
+      {q.error?.startsWith("buffer") && (
+        <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
+          Buffer error{q.detail ? `: ${decodeURIComponent(q.detail)}` : ""}.
         </p>
       )}
 
@@ -220,6 +246,8 @@ export default async function SettingsPage({
           hubspotUpdatedAt={tenant.hubspotTokens?.updatedAt ?? null}
           bufferConnected={!!tenant.bufferTokens}
           bufferUpdatedAt={tenant.bufferTokens?.updatedAt ?? null}
+          bufferProfiles={bufferProfiles}
+          selectedBufferProfileIds={stringArrayFrom(tenant.bufferTokens?.profileIds)}
           canEdit={canEdit}
           readOnly={readOnly}
           isAdmin={user.role === "ADMIN"}
@@ -233,6 +261,8 @@ export default async function SettingsPage({
           syncZillowProfile={syncZillowProfileSourceAction}
           syncHubSpot={syncHubSpotAction}
           disconnectHubSpot={disconnectHubSpotAction}
+          disconnectBuffer={disconnectBufferAction}
+          selectBufferProfiles={selectBufferProfilesAction}
         />
       )}
 
@@ -423,4 +453,8 @@ export default async function SettingsPage({
       )}
     </div>
   );
+}
+
+function stringArrayFrom(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
 }

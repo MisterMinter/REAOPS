@@ -41,7 +41,8 @@ function blueBubblesChatGuid(recipient: string): string {
 export async function sendChannelMessage(
   input: ChannelSendInput
 ): Promise<ChannelSendResult> {
-  if (!input.recipient.trim()) {
+  const recipient = normalizeRecipient(input.recipient, input.channel);
+  if (!recipient) {
     return { ok: false, error: "Missing recipient." };
   }
 
@@ -52,16 +53,20 @@ export async function sendChannelMessage(
     try {
       const result = await sendEmail({
         accessToken: input.accessToken,
-        to: input.recipient,
+        to: recipient,
         subject: input.subject || "Follow-up",
         bodyHtml: htmlBody(input.body),
       });
-      return { ok: true, externalId: result.messageId };
+      const sendResult = { ok: true, externalId: result.messageId };
+      await recordChannelAudit(input, recipient, sendResult);
+      return sendResult;
     } catch (e) {
-      return {
+      const sendResult = {
         ok: false,
         error: e instanceof Error ? e.message : "Gmail send failed.",
       };
+      await recordChannelAudit(input, recipient, sendResult);
+      return sendResult;
     }
   }
 
@@ -73,24 +78,30 @@ export async function sendChannelMessage(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          chat_id: input.recipient,
+          chat_id: recipient,
           text: input.body,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       if (!res.ok) {
-        return {
+        const sendResult = {
           ok: false,
           error: typeof data.description === "string" ? data.description : res.statusText,
         };
+        await recordChannelAudit(input, recipient, sendResult);
+        return sendResult;
       }
       const result = data.result as { message_id?: number } | undefined;
-      return { ok: true, externalId: result?.message_id ? String(result.message_id) : null };
+      const sendResult = { ok: true, externalId: result?.message_id ? String(result.message_id) : null };
+      await recordChannelAudit(input, recipient, sendResult);
+      return sendResult;
     } catch (e) {
-      return {
+      const sendResult = {
         ok: false,
         error: e instanceof Error ? e.message : "Telegram send failed.",
       };
+      await recordChannelAudit(input, recipient, sendResult);
+      return sendResult;
     }
   }
 
@@ -113,14 +124,14 @@ export async function sendChannelMessage(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          chatGuid: blueBubblesChatGuid(input.recipient),
+          chatGuid: blueBubblesChatGuid(recipient),
           tempGuid: crypto.randomUUID(),
           message: input.body,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       if (!res.ok) {
-        return {
+        const sendResult = {
           ok: false,
           error:
             typeof data.error === "string"
@@ -129,8 +140,11 @@ export async function sendChannelMessage(
                 ? data.message
                 : res.statusText,
         };
+        await markChannelSendHealth(input.prisma, account.id, sendResult);
+        await recordChannelAudit(input, recipient, sendResult);
+        return sendResult;
       }
-      return {
+      const sendResult = {
         ok: true,
         externalId:
           typeof data.guid === "string"
@@ -139,11 +153,17 @@ export async function sendChannelMessage(
               ? data.messageGuid
               : null,
       };
+      await markChannelSendHealth(input.prisma, account.id, sendResult);
+      await recordChannelAudit(input, recipient, sendResult);
+      return sendResult;
     } catch (e) {
-      return {
+      const sendResult = {
         ok: false,
         error: e instanceof Error ? e.message : "BlueBubbles send failed.",
       };
+      await markChannelSendHealth(input.prisma, account.id, sendResult);
+      await recordChannelAudit(input, recipient, sendResult);
+      return sendResult;
     }
   }
 
@@ -151,6 +171,58 @@ export async function sendChannelMessage(
     ok: false,
     error: `${input.channel} is reserved for a future channel adapter.`,
   };
+}
+
+function normalizeRecipient(recipient: string, channel: ChannelKind) {
+  const value = recipient.trim();
+  if (!value) return "";
+  if (channel === ChannelKind.GMAIL) return value.toLowerCase();
+  if (channel === ChannelKind.BLUEBUBBLES || channel === ChannelKind.SMS || channel === ChannelKind.WHATSAPP) {
+    if (value.startsWith("iMessage;")) return value;
+    return value.replace(/[^\d+]/g, "");
+  }
+  return value;
+}
+
+async function recordChannelAudit(
+  input: ChannelSendInput,
+  recipient: string,
+  result: ChannelSendResult
+) {
+  await input.prisma.auditEvent
+    .create({
+      data: {
+        tenantId: input.tenantId,
+        action: result.ok ? "channel.send" : "channel.send_failed",
+        subjectType: "Channel",
+        subjectId: input.channel,
+        metadata: {
+          channel: input.channel,
+          recipient,
+          subject: input.subject ?? null,
+          externalId: result.externalId ?? null,
+          error: result.error ?? null,
+        },
+      },
+    })
+    .catch(() => undefined);
+}
+
+async function markChannelSendHealth(
+  prisma: PrismaClient,
+  accountId: string,
+  result: ChannelSendResult
+) {
+  await prisma.channelAccount
+    .update({
+      where: { id: accountId },
+      data: {
+        status: result.ok ? "healthy" : "degraded",
+        lastHealthCheckAt: new Date(),
+        lastError: result.ok ? null : result.error ?? "Send failed.",
+      },
+    })
+    .catch(() => undefined);
 }
 
 export async function checkBlueBubblesHealth(

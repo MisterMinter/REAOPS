@@ -65,6 +65,7 @@ export async function GET(req: Request) {
     const degradedChannels = await prisma.channelAccount.count({
       where: { status: { in: ["degraded", "failed"] } },
     });
+    const tenantBufferConnections = await prisma.bufferTokens.count();
     checks.push({
       name: "channels",
       ok: degradedChannels === 0,
@@ -72,7 +73,8 @@ export async function GET(req: Request) {
       metadata: {
         degradedChannels,
         telegramConfigured: Boolean(process.env.TELEGRAM_BOT_TOKEN?.trim()),
-        bufferConfigured: Boolean(process.env.BUFFER_ACCESS_TOKEN?.trim()),
+        bufferConfigured: tenantBufferConnections > 0 || Boolean(process.env.BUFFER_ACCESS_TOKEN?.trim()),
+        tenantBufferConnections,
         hubspotConfigured: Boolean(
           process.env.HUBSPOT_CLIENT_ID?.trim() && process.env.HUBSPOT_CLIENT_SECRET?.trim()
         ),

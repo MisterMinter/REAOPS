@@ -5,6 +5,7 @@ import { checkBlueBubblesHealth } from "@/lib/channels";
 import { encryptSecret } from "@/lib/crypto";
 import { brandKitToJson, parseBrandKit } from "@/lib/marketing/brand-kit";
 import { disconnectHubSpot, syncHubSpotForTenant } from "@/lib/hubspot";
+import { disconnectBuffer, selectBufferProfiles } from "@/lib/buffer";
 import { ensureOpsDefaults } from "@/lib/ops/defaults";
 import { canEditBrokerageConfig } from "@/lib/ops/auth";
 import { requireActiveUser, requireTenantUser } from "@/lib/session-guard";
@@ -236,6 +237,23 @@ export async function disconnectHubSpotAction() {
   await disconnectHubSpot({ prisma, tenantId: ctx.tenantId });
   revalidatePath("/settings");
   redirect("/settings?saved=hubspot-disconnect");
+}
+
+export async function disconnectBufferAction() {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+  await disconnectBuffer({ prisma, tenantId: ctx.tenantId });
+  revalidatePath("/settings");
+  redirect("/settings?saved=buffer-disconnect");
+}
+
+export async function selectBufferProfilesAction(formData: FormData) {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+  const profileIds = formData.getAll("profileIds").map(String).filter(Boolean);
+  await selectBufferProfiles({ prisma, tenantId: ctx.tenantId, profileIds });
+  revalidatePath("/settings");
+  redirect("/settings?saved=buffer-profiles");
 }
 
 export async function updateAutomationPolicyAction(formData: FormData) {

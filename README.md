@@ -12,7 +12,7 @@ AI-powered real estate brokerage assistant. An agentic backend built on Next.js 
 - **Portfolio analysis** — Summarize active listings by status, flag high days-on-market properties, suggest priority actions, and generate a daily brief.
 - **Tenant brain** — Optional GBrain-backed durable brokerage memory for tenant-scoped facts, decisions, brand rules, SOPs, and agent-run summaries.
 - **Content review gates** — Brand, factual, and compliance review runs before outbound/publishable content is sent, saved to Drive, or published.
-- **Buffer** — Create social media drafts (stub — OAuth integration planned for Phase 2).
+- **Buffer** — Tenant-scoped OAuth connection, social profile selection, review-gated draft/scheduled post creation.
 - **Zillow** — Scrape public Zillow profile pages to import listing links (best-effort; datacenter IPs are often blocked).
 
 The agent runs a multi-step loop (`generateText` with `tools` + `maxSteps`) so it can chain tool calls autonomously — e.g. look up a listing, pull its photos from Drive, generate a marketing pack, and save the result back as a Doc, all from a single user message.
@@ -72,6 +72,7 @@ The app requests: `openid`, `email`, `profile`, `drive` (full), `calendar`, `gma
 - **Google Cloud Console** — authorized redirect URI: `https://reaops.com/api/auth/callback/google`.
 - **AI keys** — set at least one of `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`.
 - **Telegram** — set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`, then register the webhook pointing to `https://reaops.com/api/agent/telegram?secret=<SECRET>`.
+- **Buffer** — set `BUFFER_CLIENT_ID` and `BUFFER_CLIENT_SECRET`; authorized redirect URI: `https://reaops.com/api/buffer/callback`.
 - **Cron secrets** — set `CRON_SECRET`, `ZILLOW_SYNC_SECRET`, and `TELEGRAM_WEBHOOK_SECRET`; production routes fail closed when these are missing.
 - **Health checks** — `/api/health` is shallow; `/api/health?deep=1` checks GBrain, jobs, channel config, and recent failures.
 - **Cron routes** — call `/api/cron/daily-brief`, `/api/cron/agent-loops`, and `/api/cron/tenant-brain` with `Authorization: Bearer $CRON_SECRET` for briefs, autonomous loops, and scheduled GBrain backfill/consolidation.

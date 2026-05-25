@@ -35,6 +35,8 @@ type Props = {
   hubspotUpdatedAt: Date | null;
   bufferConnected: boolean;
   bufferUpdatedAt: Date | null;
+  bufferProfiles: Array<{ id: string; service: string; username: string; default: boolean }>;
+  selectedBufferProfileIds: string[];
   canEdit: boolean;
   readOnly: boolean;
   isAdmin: boolean;
@@ -55,6 +57,8 @@ type Props = {
   syncZillowProfile: (formData: FormData) => Promise<void>;
   syncHubSpot: () => Promise<void>;
   disconnectHubSpot: () => Promise<void>;
+  disconnectBuffer: () => Promise<void>;
+  selectBufferProfiles: (formData: FormData) => Promise<void>;
 };
 
 export function SettingsForms({
@@ -69,6 +73,8 @@ export function SettingsForms({
   hubspotUpdatedAt,
   bufferConnected,
   bufferUpdatedAt,
+  bufferProfiles,
+  selectedBufferProfileIds,
   canEdit,
   readOnly,
   isAdmin,
@@ -82,6 +88,8 @@ export function SettingsForms({
   syncZillowProfile,
   syncHubSpot,
   disconnectHubSpot,
+  disconnectBuffer,
+  selectBufferProfiles,
 }: Props) {
   const [pending, startTransition] = useTransition();
 
@@ -554,9 +562,60 @@ export function SettingsForms({
             {bufferConnected && bufferUpdatedAt && (
               <p className="mt-2 text-xs text-[var(--txt3)]">Updated {bufferUpdatedAt.toLocaleString()}</p>
             )}
-            <p className="mt-3 text-xs text-[var(--txt3)]">
-              Social scheduling will connect here. Until then, copy captions from the marketing workflow manually.
-            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {!bufferConnected ? (
+                <Link
+                  href="/api/buffer/connect"
+                  aria-disabled={!canEdit}
+                  className={`rounded-md bg-[var(--teal)]/20 px-3 py-2 text-xs font-semibold text-[var(--teal)] ${
+                    canEdit ? "" : "pointer-events-none opacity-50"
+                  }`}
+                >
+                  Connect Buffer
+                </Link>
+              ) : (
+                <form action={disconnectBuffer}>
+                  <button
+                    disabled={!canEdit}
+                    className="rounded-md border border-[var(--border2)] px-3 py-2 text-xs font-semibold text-[var(--txt2)] disabled:opacity-50"
+                  >
+                    Disconnect
+                  </button>
+                </form>
+              )}
+            </div>
+            {bufferConnected && bufferProfiles.length > 0 && (
+              <form action={selectBufferProfiles} className="mt-4 space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Profiles</div>
+                {bufferProfiles.map((profile) => (
+                  <label key={profile.id} className="flex items-center gap-2 text-xs text-[var(--txt2)]">
+                    <input
+                      type="checkbox"
+                      name="profileIds"
+                      value={profile.id}
+                      defaultChecked={
+                        selectedBufferProfileIds.length > 0
+                          ? selectedBufferProfileIds.includes(profile.id)
+                          : profile.default
+                      }
+                      disabled={!canEdit}
+                    />
+                    <span>
+                      {profile.service} · {profile.username}
+                    </span>
+                  </label>
+                ))}
+                <button
+                  disabled={!canEdit}
+                  className="rounded-md bg-[var(--teal)]/20 px-3 py-2 text-xs font-semibold text-[var(--teal)] disabled:opacity-50"
+                >
+                  Save profiles
+                </button>
+              </form>
+            )}
+            {bufferConnected && bufferProfiles.length === 0 && (
+              <p className="mt-3 text-xs text-[var(--amber)]">Connected, but no Buffer profiles were returned.</p>
+            )}
           </div>
         </div>
       </section>
