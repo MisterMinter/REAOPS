@@ -1,5 +1,4 @@
 import { streamText } from "ai";
-import { auth } from "@/auth";
 import { resolveLanguageModel } from "@/lib/ai-chat";
 import {
   type ListingFacts,
@@ -7,6 +6,7 @@ import {
   marketingUserPrompt,
 } from "@/lib/marketing-generate";
 import { prisma } from "@/lib/prisma";
+import { authzResponse, requireTenantUser } from "@/lib/session-guard";
 
 type Body = {
   provider?: string;
@@ -16,9 +16,11 @@ type Body = {
 };
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.tenantId) {
-    return new Response(JSON.stringify({ error: "Tenant required" }), { status: 403 });
+  let user;
+  try {
+    user = await requireTenantUser();
+  } catch (error) {
+    return authzResponse(error);
   }
 
   let body: Body;
@@ -39,7 +41,7 @@ export async function POST(req: Request) {
       : "Not specified.";
 
   const tenant = await prisma.tenant.findUnique({
-    where: { id: session.user.tenantId },
+    where: { id: user.tenantId },
     select: { defaultTone: true },
   });
   const fromBody =

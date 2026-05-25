@@ -30,9 +30,12 @@ export async function buildAgentContext(
       name: true,
       role: true,
       tenantId: true,
+      isActive: true,
+      tenant: { select: { isActive: true } },
     },
   });
   if (!user) return null;
+  if (!user.isActive || (user.tenantId && !user.tenant?.isActive)) return null;
 
   let tenantName: string | null = null;
   let defaultTone = "Warm but professional. First-name basis. No pressure.";

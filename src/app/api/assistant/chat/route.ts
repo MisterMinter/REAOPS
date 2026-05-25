@@ -1,19 +1,21 @@
-import { auth } from "@/auth";
 import { runAgent } from "@/agent/core";
 import type { CoreMessage } from "ai";
+import { checkRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
+import { authzResponse, requireTenantUser } from "@/lib/session-guard";
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+  let user;
+  try {
+    user = await requireTenantUser();
+  } catch (error) {
+    return authzResponse(error);
   }
-  if (!session.user.tenantId) {
-    return new Response(JSON.stringify({ error: "Tenant required" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" },
+
+  const limited = checkRateLimit(`assistant-chat:${user.id}`, { limit: 60, windowMs: 60_000 });
+  if (!limited.ok) {
+    return new Response(JSON.stringify({ error: "Too many chat requests." }), {
+      status: 429,
+      headers: { "Content-Type": "application/json", ...rateLimitHeaders(limited) },
     });
   }
 
@@ -42,7 +44,7 @@ export async function POST(req: Request) {
 
   try {
     const result = await runAgent({
-      userId: session.user.id,
+      userId: user.id,
       messages,
       provider: body.provider,
     });

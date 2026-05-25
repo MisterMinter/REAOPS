@@ -4,20 +4,13 @@ import { sendTelegramMessages } from "@/agent/telegram";
 import { runEnabledAgentLoops } from "@/lib/agent-loops/runner";
 import { markNotificationsDelivered } from "@/lib/ops/notifications";
 import { prisma } from "@/lib/prisma";
+import { requireRouteSecret } from "@/lib/route-security";
 
 export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const url = new URL(req.url);
-    const token =
-      url.searchParams.get("secret") ??
-      req.headers.get("authorization")?.replace("Bearer ", "");
-    if (token !== cronSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  const unauthorized = requireRouteSecret(req, "CRON_SECRET");
+  if (unauthorized) return unauthorized;
 
   const tenants = await prisma.tenant.findMany({
     where: { isActive: true },

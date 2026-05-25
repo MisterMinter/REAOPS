@@ -3,6 +3,7 @@ import { Topbar } from "@/components/shell/topbar";
 import { WorkflowNav } from "@/components/shell/workflow-nav";
 import { prisma } from "@/lib/prisma";
 import { resolveTenantLogoForDisplay } from "@/lib/tenant-logo";
+import { redirect } from "next/navigation";
 
 export default async function MainAppLayout({
   children,
@@ -10,13 +11,17 @@ export default async function MainAppLayout({
   children: React.ReactNode;
 }) {
   const session = await auth();
+  if (session?.error === "AccountInactive") {
+    redirect("/login?error=inactive");
+  }
 
   let tenantPreview = null;
   if (session?.user?.tenantId) {
     const t = await prisma.tenant.findUnique({
       where: { id: session.user.tenantId },
-      select: { brokerageName: true, name: true, logoUrl: true },
+      select: { brokerageName: true, name: true, logoUrl: true, isActive: true },
     });
+    if (t && !t.isActive) redirect("/login?error=inactive-tenant");
     if (t) {
       tenantPreview = {
         displayName: t.brokerageName ?? t.name,

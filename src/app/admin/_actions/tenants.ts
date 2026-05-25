@@ -1,18 +1,15 @@
 "use server";
 
-import { auth } from "@/auth";
 import { DEFAULT_DEAL_MAPPING, parseHubspotListingProps } from "@/lib/hubspot-mapping";
 import { prisma } from "@/lib/prisma";
+import { requireAdminUser } from "@/lib/session-guard";
 import { slugify } from "@/lib/slug";
 import { uploadTenantLogo } from "@/lib/storage";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 function requireAdmin() {
-  return auth().then((s) => {
-    if (s?.user?.role !== "ADMIN") throw new Error("Forbidden");
-    return s;
-  });
+  return requireAdminUser();
 }
 
 export async function createTenant(formData: FormData) {

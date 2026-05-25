@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
 import type { ListingFacts } from "@/lib/marketing-generate";
 import { createListingLaunchPack } from "@/lib/marketing/launch-pack";
+import { isFolderAllowedForTenant } from "@/lib/drive-folder-access";
+import { getGoogleAccessTokenForUser } from "@/lib/google-account-token";
+import { prisma } from "@/lib/prisma";
+import { authzResponse, requireTenantUser } from "@/lib/session-guard";
 
 type Body = {
   sourceListingKey?: string;
@@ -15,9 +18,11 @@ type Body = {
 };
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.id || !session.user.tenantId) {
-    return NextResponse.json({ error: "Tenant required" }, { status: 403 });
+  let user;
+  try {
+    user = await requireTenantUser();
+  } catch (error) {
+    return authzResponse(error);
   }
 
   const body = (await req.json().catch(() => null)) as Body | null;
@@ -28,11 +33,29 @@ export async function POST(req: Request) {
     );
   }
 
+  if (body.cachedListingId) {
+    const listing = await prisma.cachedListing.findFirst({
+      where: { id: body.cachedListingId, tenantId: user.tenantId },
+      select: { id: true },
+    });
+    if (!listing) return NextResponse.json({ error: "Listing not found." }, { status: 404 });
+  }
+
+  if (body.driveFolderId) {
+    const accessToken = await getGoogleAccessTokenForUser(user.id);
+    const allowed = await isFolderAllowedForTenant(user.tenantId, body.driveFolderId, {
+      accessToken: accessToken ?? undefined,
+    });
+    if (!allowed) {
+      return NextResponse.json({ error: "Drive folder is outside this tenant." }, { status: 403 });
+    }
+  }
+
   const campaign = await createListingLaunchPack({
     actor: {
-      id: session.user.id,
-      tenantId: session.user.tenantId,
-      role: session.user.role,
+      id: user.id,
+      tenantId: user.tenantId,
+      role: user.role,
     },
     sourceListingKey: body.sourceListingKey,
     cachedListingId: body.cachedListingId ?? null,

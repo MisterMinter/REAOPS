@@ -2,6 +2,7 @@
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { requireAdminUser } from "@/lib/session-guard";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { UserRole } from "@prisma/client";
@@ -9,8 +10,7 @@ import { UserRole } from "@prisma/client";
 const ROLES: UserRole[] = [UserRole.ADMIN, UserRole.BROKER_OWNER, UserRole.AGENT];
 
 async function requireAdmin() {
-  const s = await auth();
-  if (s?.user?.role !== "ADMIN") throw new Error("Forbidden");
+  await requireAdminUser();
 }
 
 export async function createUser(formData: FormData) {

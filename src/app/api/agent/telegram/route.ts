@@ -4,15 +4,22 @@ import {
   sendTelegramMessages,
   truncateForTelegram,
 } from "@/agent/telegram";
+import { checkRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
+import { requireRouteSecret } from "@/lib/route-security";
 
 export async function POST(req: Request) {
-  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (secret) {
-    const url = new URL(req.url);
-    const token = url.searchParams.get("secret");
-    if (token !== secret) {
-      return NextResponse.json({ ok: false }, { status: 401 });
-    }
+  const unauthorized = requireRouteSecret(req, "TELEGRAM_WEBHOOK_SECRET");
+  if (unauthorized) return unauthorized;
+
+  const limited = checkRateLimit(`telegram:${req.headers.get("x-forwarded-for") ?? "unknown"}`, {
+    limit: 120,
+    windowMs: 60_000,
+  });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: "Too many Telegram webhook requests." },
+      { status: 429, headers: rateLimitHeaders(limited) }
+    );
   }
 
   const botToken = process.env.TELEGRAM_BOT_TOKEN;

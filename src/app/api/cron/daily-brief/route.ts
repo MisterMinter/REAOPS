@@ -16,20 +16,13 @@ import {
   createAgentNotifications,
   markNotificationsDelivered,
 } from "@/lib/ops/notifications";
+import { requireRouteSecret } from "@/lib/route-security";
 
 export const maxDuration = 120;
 
 export async function GET(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const url = new URL(req.url);
-    const token =
-      url.searchParams.get("secret") ??
-      req.headers.get("authorization")?.replace("Bearer ", "");
-    if (token !== cronSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  const unauthorized = requireRouteSecret(req, "CRON_SECRET");
+  if (unauthorized) return unauthorized;
 
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
 

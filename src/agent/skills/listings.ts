@@ -51,11 +51,11 @@ export function listingTools(ctx: ToolContext) {
         listingId: z.string().describe("The CachedListing ID."),
       }),
       execute: async ({ listingId }) => {
-        const listing = await prisma.cachedListing.findUnique({
-          where: { id: listingId },
+        if (!ctx.tenantId) return { error: "No brokerage assigned." };
+        const listing = await prisma.cachedListing.findFirst({
+          where: { id: listingId, tenantId: ctx.tenantId },
         });
         if (!listing) return { error: "Listing not found." };
-        if (listing.tenantId !== ctx.tenantId) return { error: "Listing belongs to another tenant." };
         return listing;
       },
     }),

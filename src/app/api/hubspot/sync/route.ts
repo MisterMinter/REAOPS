@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { syncHubSpotForTenant } from "@/lib/hubspot";
 import { canEditBrokerageConfig } from "@/lib/ops/auth";
+import { authzResponse, requireTenantUser } from "@/lib/session-guard";
 
 export async function POST() {
-  const session = await auth();
-  const user = session?.user;
-  if (!user?.id || !user.tenantId || !canEditBrokerageConfig(user.role)) {
+  let user;
+  try {
+    user = await requireTenantUser();
+  } catch (error) {
+    return authzResponse(error);
+  }
+  if (!canEditBrokerageConfig(user.role)) {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 

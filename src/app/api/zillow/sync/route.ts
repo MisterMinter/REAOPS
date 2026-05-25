@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRouteSecret } from "@/lib/route-security";
 import { syncZillowProfileSource } from "@/lib/zillow-sync";
 
 /**
@@ -19,13 +20,10 @@ import { syncZillowProfileSource } from "@/lib/zillow-sync";
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
-  const secret = process.env.ZILLOW_SYNC_SECRET?.trim();
-  if (secret && body.secret !== secret) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  const unauthorized = requireRouteSecret(req, "ZILLOW_SYNC_SECRET", {
+    providedSecret: body.secret,
+  });
+  if (unauthorized) return unauthorized;
 
   const sourceId = typeof body.sourceId === "string" ? body.sourceId : null;
   const tenantId = typeof body.tenantId === "string" ? body.tenantId : null;
@@ -34,12 +32,16 @@ export async function POST(req: Request) {
   let sources: { id: string; profileUrl: string; tenantId: string }[];
 
   if (sourceId) {
-    const src = await prisma.zillowProfileSource.findUnique({ where: { id: sourceId } });
+    const src = await prisma.zillowProfileSource.findFirst({
+      where: { id: sourceId, tenant: { isActive: true } },
+    });
     sources = src ? [src] : [];
   } else if (tenantId) {
-    sources = await prisma.zillowProfileSource.findMany({ where: { tenantId } });
+    sources = await prisma.zillowProfileSource.findMany({
+      where: { tenantId, tenant: { isActive: true } },
+    });
   } else if (syncAll) {
-    sources = await prisma.zillowProfileSource.findMany();
+    sources = await prisma.zillowProfileSource.findMany({ where: { tenant: { isActive: true } } });
   } else {
     return NextResponse.json(
       { error: "Provide sourceId, tenantId, or all: true" },
@@ -87,8 +89,12 @@ export async function POST(req: Request) {
 /**
  * GET /api/zillow/sync — check sync status for all sources
  */
-export async function GET() {
+export async function GET(req: Request) {
+  const unauthorized = requireRouteSecret(req, "ZILLOW_SYNC_SECRET");
+  if (unauthorized) return unauthorized;
+
   const sources = await prisma.zillowProfileSource.findMany({
+    where: { tenant: { isActive: true } },
     select: {
       id: true,
       profileUrl: true,

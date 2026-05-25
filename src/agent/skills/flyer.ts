@@ -5,6 +5,7 @@ import { resolveLanguageModel } from "@/lib/ai-chat";
 import { reviewContent, reviewToJson } from "@/lib/content-review";
 import { prisma } from "@/lib/prisma";
 import { getDriveClient, listPhotosInFolder } from "@/lib/drive";
+import { isFolderAllowedForTenant } from "@/lib/drive-folder-access";
 import { renderFlyerHtml, type FlyerData } from "@/lib/flyer-templates";
 import { renderFlyerPdf, renderFlyerPng } from "@/lib/flyer-render";
 import { parseBrandKit, type BrandKit } from "@/lib/marketing/brand-kit";
@@ -47,8 +48,14 @@ export function flyerTools(ctx: ToolContext) {
         const model = resolveLanguageModel();
         if (!model) return { error: "No AI provider configured." };
 
-        const { facts, driveFolderId } = await resolveListing(params);
+        const { facts, driveFolderId } = await resolveListing(params, ctx.tenantId);
         if (!facts) return { error: "Listing not found." };
+        if (ctx.accessToken && driveFolderId) {
+          const allowed = await isFolderAllowedForTenant(ctx.tenantId, driveFolderId, {
+            accessToken: ctx.accessToken,
+          });
+          if (!allowed) return { error: "Drive folder is outside this brokerage workspace." };
+        }
 
         const heroImage = await fetchHeroPhoto(ctx.accessToken, driveFolderId);
 
@@ -193,8 +200,14 @@ export function flyerTools(ctx: ToolContext) {
         const model = resolveLanguageModel();
         if (!model) return { error: "No AI provider configured." };
 
-        const { facts, driveFolderId } = await resolveListing({ listingId });
+        const { facts, driveFolderId } = await resolveListing({ listingId }, ctx.tenantId);
         if (!facts) return { error: "Listing not found." };
+        if (driveFolderId) {
+          const allowed = await isFolderAllowedForTenant(ctx.tenantId, driveFolderId, {
+            accessToken: ctx.accessToken,
+          });
+          if (!allowed) return { error: "Drive folder is outside this brokerage workspace." };
+        }
 
         const heroImage = await fetchHeroPhoto(ctx.accessToken, driveFolderId);
         const broker = await resolveBroker(ctx.tenantId);
@@ -309,10 +322,10 @@ async function resolveListing(params: {
   sqft?: number;
   price?: string;
   features?: string;
-}): Promise<{ facts: ListingFacts | null; driveFolderId: string | null }> {
+}, tenantId: string): Promise<{ facts: ListingFacts | null; driveFolderId: string | null }> {
   if (params.listingId) {
-    const listing = await prisma.cachedListing.findUnique({
-      where: { id: params.listingId },
+    const listing = await prisma.cachedListing.findFirst({
+      where: { id: params.listingId, tenantId },
     });
     if (!listing) return { facts: null, driveFolderId: null };
     return {

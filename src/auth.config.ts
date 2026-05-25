@@ -65,7 +65,11 @@ export const authConfig = {
       session.accessToken =
         typeof token.googleAccessToken === "string" ? token.googleAccessToken : undefined;
       session.error =
-        typeof token.googleAccessError === "string" ? token.googleAccessError : undefined;
+        token.accountActive === false
+          ? "AccountInactive"
+          : typeof token.googleAccessError === "string"
+            ? token.googleAccessError
+            : undefined;
       return session;
     },
   },

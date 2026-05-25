@@ -116,7 +116,11 @@ export async function handleTelegramMessage(
 
 async function findUserByTelegram(telegramUserId: number) {
   return prisma.user.findFirst({
-    where: { telegramId: String(telegramUserId) },
+    where: {
+      telegramId: String(telegramUserId),
+      isActive: true,
+      OR: [{ tenantId: null }, { tenant: { isActive: true } }],
+    },
     select: { id: true, email: true, tenantId: true },
   });
 }

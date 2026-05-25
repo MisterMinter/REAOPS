@@ -24,5 +24,6 @@ declare module "next-auth/jwt" {
     googleRefreshToken?: string;
     googleAccessTokenExpires?: number;
     googleAccessError?: string;
+    accountActive?: boolean;
   }
 }

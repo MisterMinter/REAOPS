@@ -5,9 +5,10 @@ import {
   scrapeZillowProfile,
   scrapeZillowListingDetail,
 } from "@/lib/zillow-scrape";
+import { prisma } from "@/lib/prisma";
 import { syncZillowProfileSource } from "@/lib/zillow-sync";
 
-export function zillowTools(_ctx: ToolContext) {
+export function zillowTools(ctx: ToolContext) {
   return {
     zillow_scrape_profile: tool({
       description:
@@ -58,6 +59,12 @@ export function zillowTools(_ctx: ToolContext) {
         profileSourceId: z.string().describe("The ZillowProfileSource ID from Settings."),
       }),
       execute: async ({ profileSourceId }) => {
+        if (!ctx.tenantId) return { error: "No brokerage assigned." };
+        const source = await prisma.zillowProfileSource.findFirst({
+          where: { id: profileSourceId, tenantId: ctx.tenantId },
+          select: { id: true },
+        });
+        if (!source) return { error: "Zillow source not found." };
         return await syncZillowProfileSource(profileSourceId);
       },
     }),

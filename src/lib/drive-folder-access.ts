@@ -15,8 +15,8 @@ export async function isFolderAllowedForTenant(
   folderId: string,
   opts?: AllowOpts
 ): Promise<boolean> {
-  const cfg = await prisma.driveConfig.findUnique({
-    where: { tenantId },
+  const cfg = await prisma.driveConfig.findFirst({
+    where: { tenantId, tenant: { isActive: true } },
     select: { rootFolderId: true },
   });
   if (!cfg) return false;

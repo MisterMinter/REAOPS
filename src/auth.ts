@@ -12,9 +12,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async signIn({ user, profile }) {
       const emailRaw = user.email ?? (profile as { email?: string } | undefined)?.email;
       if (!emailRaw || typeof emailRaw !== "string") return false;
+      const emailVerified = (profile as { email_verified?: boolean } | undefined)?.email_verified;
+      if (emailVerified === false) return false;
       const email = emailRaw.trim().toLowerCase();
-      const dbUser = await prisma.user.findUnique({ where: { email } });
-      return Boolean(dbUser?.isActive);
+      const dbUser = await prisma.user.findUnique({
+        where: { email },
+        select: {
+          isActive: true,
+          tenantId: true,
+          tenant: { select: { isActive: true } },
+        },
+      });
+      return Boolean(dbUser?.isActive && (!dbUser.tenantId || dbUser.tenant?.isActive));
     },
     async jwt({ token, user, account }) {
       const acc = account as
@@ -40,11 +49,31 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.id = user.id as string;
         token.role = userRoleFromAdapterUser(user);
         token.tenantId = (user as { tenantId?: string | null }).tenantId ?? null;
-        const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+      }
+
+      const tokenUserId =
+        typeof token.id === "string" ? token.id : typeof token.sub === "string" ? token.sub : null;
+      if (tokenUserId) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: tokenUserId },
+          select: {
+            id: true,
+            role: true,
+            tenantId: true,
+            isActive: true,
+            tenant: { select: { isActive: true } },
+          },
+        });
         if (dbUser) {
           token.id = dbUser.id;
           token.role = dbUser.role;
-          token.tenantId = dbUser.tenantId;
+          token.tenantId = dbUser.isActive && (!dbUser.tenantId || dbUser.tenant?.isActive)
+            ? dbUser.tenantId
+            : null;
+          token.accountActive = Boolean(dbUser.isActive && (!dbUser.tenantId || dbUser.tenant?.isActive));
+        } else {
+          token.accountActive = false;
+          token.tenantId = null;
         }
       }
 
@@ -67,11 +96,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const base = await authConfig.callbacks.session!(params);
       const id = base.user?.id;
       if (base.user && id) {
-        const dbUser = await prisma.user.findUnique({ where: { id } });
+        const dbUser = await prisma.user.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            role: true,
+            tenantId: true,
+            isActive: true,
+            tenant: { select: { isActive: true } },
+          },
+        });
         if (dbUser) {
           base.user.id = dbUser.id;
           base.user.role = dbUser.role;
-          base.user.tenantId = dbUser.tenantId;
+          const active = dbUser.isActive && (!dbUser.tenantId || dbUser.tenant?.isActive);
+          base.user.tenantId = active ? dbUser.tenantId : null;
+          if (!active) base.error = "AccountInactive";
         }
       }
       return base;

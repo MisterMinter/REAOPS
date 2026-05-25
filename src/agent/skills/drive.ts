@@ -7,12 +7,36 @@ import {
   listPhotosInFolder,
 } from "@/lib/drive";
 import { reviewContent, reviewToJson } from "@/lib/content-review";
+import { isFolderAllowedForTenant } from "@/lib/drive-folder-access";
 import { createComplianceReview } from "@/lib/ops/workflows";
 
 export function driveTools(ctx: ToolContext) {
   function requireToken() {
     if (!ctx.accessToken) throw new Error("No Google Drive token. User needs to sign in with Google.");
     return ctx.accessToken;
+  }
+
+  async function ensureFolderAllowed(folderId: string, token: string) {
+    if (!ctx.tenantId) throw new Error("No brokerage assigned.");
+    const allowed = await isFolderAllowedForTenant(ctx.tenantId, folderId, { accessToken: token });
+    if (!allowed) throw new Error("Drive folder is outside this brokerage workspace.");
+  }
+
+  async function ensureFileAllowed(fileId: string, token: string) {
+    if (!ctx.tenantId) throw new Error("No brokerage assigned.");
+    const drive = getDriveClient(token);
+    const file = await drive.files.get({
+      fileId,
+      fields: "id, parents",
+      supportsAllDrives: true,
+    });
+    const parents = file.data.parents ?? [];
+    for (const parentId of parents) {
+      if (await isFolderAllowedForTenant(ctx.tenantId, parentId, { accessToken: token })) {
+        return parents;
+      }
+    }
+    throw new Error("Drive file is outside this brokerage workspace.");
   }
 
   return {
@@ -25,6 +49,7 @@ export function driveTools(ctx: ToolContext) {
         const token = requireToken();
         const fid = parentId ?? ctx.driveRootFolderId;
         if (!fid) return { error: "No Drive root folder configured." };
+        await ensureFolderAllowed(fid, token);
         const folders = await listSubfolders(token, fid);
         return { folders: folders.map((f) => ({ id: f.id, name: f.name })) };
       },
@@ -37,6 +62,7 @@ export function driveTools(ctx: ToolContext) {
       }),
       execute: async ({ folderId }) => {
         const token = requireToken();
+        await ensureFolderAllowed(folderId, token);
         const drive = getDriveClient(token);
         const res = await drive.files.list({
           q: `'${folderId}' in parents and trashed = false`,
@@ -56,6 +82,7 @@ export function driveTools(ctx: ToolContext) {
       }),
       execute: async ({ fileId }) => {
         const token = requireToken();
+        await ensureFileAllowed(fileId, token);
         const drive = getDriveClient(token);
         const res = await drive.files.get({
           fileId,
@@ -74,9 +101,10 @@ export function driveTools(ctx: ToolContext) {
       }),
       execute: async ({ fileId, newParentId }) => {
         const token = requireToken();
+        await ensureFolderAllowed(newParentId, token);
+        const parents = await ensureFileAllowed(fileId, token);
         const drive = getDriveClient(token);
-        const file = await drive.files.get({ fileId, fields: "parents", supportsAllDrives: true });
-        const prev = file.data.parents?.join(",") ?? "";
+        const prev = parents.join(",");
         await drive.files.update({
           fileId,
           addParents: newParentId,
@@ -96,6 +124,8 @@ export function driveTools(ctx: ToolContext) {
       }),
       execute: async ({ folderId, title, content }) => {
         if (!ctx.tenantId) return { error: "No brokerage assigned." };
+        const token = requireToken();
+        await ensureFolderAllowed(folderId, token);
         const review = await reviewContent({
           tenantId: ctx.tenantId,
           actorId: ctx.userId,
@@ -121,7 +151,6 @@ export function driveTools(ctx: ToolContext) {
             review,
           };
         }
-        const token = requireToken();
         const drive = getDriveClient(token);
         const res = await drive.files.create({
           requestBody: {
@@ -176,6 +205,7 @@ export function driveTools(ctx: ToolContext) {
       }),
       execute: async ({ folderId }) => {
         const token = requireToken();
+        await ensureFolderAllowed(folderId, token);
         const photos = await listPhotosInFolder(token, folderId);
         return { photos };
       },

@@ -13,6 +13,7 @@ import {
 import { createListingLaunchPack } from "@/lib/marketing/launch-pack";
 import { prisma } from "@/lib/prisma";
 import { getDriveClient } from "@/lib/drive";
+import { isFolderAllowedForTenant } from "@/lib/drive-folder-access";
 import { createComplianceReview, generateMarketingAsset } from "@/lib/ops/workflows";
 import { MarketingAssetType } from "@prisma/client";
 
@@ -83,11 +84,12 @@ export function marketingTools(ctx: ToolContext) {
         heroPhotoName: z.string().optional().describe("Name of the hero photo file for context."),
       }),
       execute: async (params) => {
+        if (!ctx.tenantId) return { error: "No brokerage assigned." };
         let facts: ListingFacts;
 
         if (params.listingId) {
-          const listing = await prisma.cachedListing.findUnique({
-            where: { id: params.listingId },
+          const listing = await prisma.cachedListing.findFirst({
+            where: { id: params.listingId, tenantId: ctx.tenantId },
           });
           if (!listing) return { error: "Listing not found." };
           facts = {
@@ -185,6 +187,10 @@ export function marketingTools(ctx: ToolContext) {
           };
         }
         if (!ctx.accessToken) return { error: "No Drive token." };
+        const allowed = await isFolderAllowedForTenant(ctx.tenantId, folderId, {
+          accessToken: ctx.accessToken,
+        });
+        if (!allowed) return { error: "Drive folder is outside this brokerage workspace." };
         const drive = getDriveClient(ctx.accessToken);
         const res = await drive.files.create({
           requestBody: {

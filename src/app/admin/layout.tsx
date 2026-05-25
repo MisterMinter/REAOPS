@@ -1,8 +1,11 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { requireAdminUser } from "@/lib/session-guard";
 
 export const dynamic = "force-dynamic";
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  await requireAdminUser().catch(() => redirect("/login"));
   return (
     <div className="relative z-10 min-h-screen">
       <header className="border-b border-[var(--border)] bg-[var(--surface)] px-4 py-3 sm:px-6">

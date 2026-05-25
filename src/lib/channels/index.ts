@@ -1,4 +1,5 @@
 import { ChannelKind, type PrismaClient } from "@prisma/client";
+import { decryptSecret } from "@/lib/crypto";
 import { sendEmail } from "@/lib/gmail-send";
 
 export type ChannelSendInput = {
@@ -98,14 +99,7 @@ export async function sendChannelMessage(
       where: { tenantId: input.tenantId, kind: ChannelKind.BLUEBUBBLES },
       orderBy: { updatedAt: "desc" },
     });
-    const config = (account?.config ?? {}) as Record<string, unknown>;
-    const baseUrl = typeof config.baseUrl === "string" ? config.baseUrl.replace(/\/$/, "") : "";
-    const password =
-      typeof config.password === "string"
-        ? config.password
-        : typeof config.apiPassword === "string"
-          ? config.apiPassword
-          : "";
+    const { baseUrl, password } = blueBubblesConfig(account);
 
     if (!account || !baseUrl) {
       return { ok: false, error: "BlueBubbles channel is not configured." };
@@ -167,14 +161,7 @@ export async function checkBlueBubblesHealth(
     where: { tenantId, kind: ChannelKind.BLUEBUBBLES },
     orderBy: { updatedAt: "desc" },
   });
-  const config = (account?.config ?? {}) as Record<string, unknown>;
-  const baseUrl = typeof config.baseUrl === "string" ? config.baseUrl.replace(/\/$/, "") : "";
-  const password =
-    typeof config.password === "string"
-      ? config.password
-      : typeof config.apiPassword === "string"
-        ? config.apiPassword
-        : "";
+  const { baseUrl, password } = blueBubblesConfig(account);
   if (!account || !baseUrl) return { ok: false, error: "BlueBubbles is not configured." };
 
   const url = new URL(`${baseUrl}/api/v1/ping`);
@@ -200,4 +187,28 @@ export async function checkBlueBubblesHealth(
     });
     return { ok: false, error };
   }
+}
+
+function blueBubblesConfig(
+  account: { config: unknown; secretRef: string | null } | null
+): { baseUrl: string; password: string } {
+  const config = (account?.config ?? {}) as Record<string, unknown>;
+  const baseUrl = typeof config.baseUrl === "string" ? config.baseUrl.replace(/\/$/, "") : "";
+  let password = "";
+  if (account?.secretRef) {
+    try {
+      password = decryptSecret(account.secretRef);
+    } catch {
+      password = "";
+    }
+  }
+  if (!password) {
+    password =
+      typeof config.password === "string"
+        ? config.password
+        : typeof config.apiPassword === "string"
+          ? config.apiPassword
+          : "";
+  }
+  return { baseUrl, password };
 }

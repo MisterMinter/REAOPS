@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { MarketingAssetType } from "@prisma/client";
-import { auth } from "@/auth";
 import { generateMarketingAsset } from "@/lib/ops/workflows";
+import { authzResponse, requireTenantUser } from "@/lib/session-guard";
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user?.id || !session.user.tenantId) {
-    return NextResponse.json({ error: "Tenant required" }, { status: 403 });
+  let user;
+  try {
+    user = await requireTenantUser();
+  } catch (error) {
+    return authzResponse(error);
   }
 
   const body = (await req.json().catch(() => null)) as
@@ -25,9 +27,9 @@ export async function POST(req: Request) {
 
   const asset = await generateMarketingAsset({
     actor: {
-      id: session.user.id,
-      tenantId: session.user.tenantId,
-      role: session.user.role,
+      id: user.id,
+      tenantId: user.tenantId,
+      role: user.role,
     },
     title: body.title,
     type: body.type,

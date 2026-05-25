@@ -54,6 +54,11 @@ export async function runAgentLoop(input: {
   actorUserId?: string | null;
 }): Promise<AgentLoopRunResult> {
   const prisma = input.prisma ?? defaultPrisma;
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: input.tenantId },
+    select: { isActive: true },
+  });
+  if (!tenant?.isActive) throw new Error("Tenant is inactive.");
   await ensureOpsDefaults(prisma, input.tenantId);
 
   const loop = await prisma.agentLoop.upsert({
@@ -553,7 +558,7 @@ async function resolveActor(
 ): Promise<Actor> {
   if (actorUserId) {
     const user = await prisma.user.findFirst({
-      where: { id: actorUserId, tenantId },
+      where: { id: actorUserId, tenantId, isActive: true, tenant: { isActive: true } },
       select: { id: true, role: true },
     });
     if (user) return { id: user.id, tenantId, role: user.role };

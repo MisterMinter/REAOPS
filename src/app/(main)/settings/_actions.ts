@@ -1,12 +1,13 @@
 "use server";
 
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { checkBlueBubblesHealth } from "@/lib/channels";
+import { encryptSecret } from "@/lib/crypto";
 import { brandKitToJson, parseBrandKit } from "@/lib/marketing/brand-kit";
 import { disconnectHubSpot, syncHubSpotForTenant } from "@/lib/hubspot";
 import { ensureOpsDefaults } from "@/lib/ops/defaults";
 import { canEditBrokerageConfig } from "@/lib/ops/auth";
+import { requireActiveUser, requireTenantUser } from "@/lib/session-guard";
 import { uploadTenantLogo } from "@/lib/storage";
 import { syncZillowProfileSource as runZillowSync } from "@/lib/zillow-sync";
 import { ApprovalMode, ChannelKind, SendingIdentityType } from "@prisma/client";
@@ -20,25 +21,23 @@ type TenantEditor = {
 };
 
 async function getTenantEditorContext(): Promise<TenantEditor | null> {
-  const s = await auth();
-  if (!s?.user?.id || !s.user.tenantId) return null;
-  const role = s.user.role;
-  if (role === "AGENT") return { userId: s.user.id, tenantId: s.user.tenantId, canEdit: false };
+  const user = await requireTenantUser();
+  const role = user.role;
+  if (role === "AGENT") return { userId: user.id, tenantId: user.tenantId, canEdit: false };
   if (role === "BROKER_OWNER" || role === "ADMIN") {
-    return { userId: s.user.id, tenantId: s.user.tenantId, canEdit: true };
+    return { userId: user.id, tenantId: user.tenantId, canEdit: true };
   }
   return null;
 }
 
 export async function updateTelegramId(formData: FormData) {
-  const s = await auth();
-  if (!s?.user?.id) throw new Error("Unauthorized");
+  const user = await requireActiveUser();
 
   const raw = String(formData.get("telegramId") ?? "").trim();
   const telegramId = raw.length > 0 ? raw : null;
 
   await prisma.user.update({
-    where: { id: s.user.id },
+    where: { id: user.id },
     data: { telegramId },
   });
   revalidatePath("/settings");
@@ -188,6 +187,12 @@ export async function syncZillowProfileSourceAction(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) redirect("/settings?error=zillow-id");
 
+  const source = await prisma.zillowProfileSource.findFirst({
+    where: { id, tenantId: ctx.tenantId },
+    select: { id: true },
+  });
+  if (!source) redirect("/settings?error=zillow-id");
+
   const result = await runZillowSync(id);
   revalidatePath("/settings");
   revalidatePath("/marketing");
@@ -318,12 +323,13 @@ export async function configureBlueBubblesAction(formData: FormData) {
 
   const existing = await prisma.channelAccount.findFirst({
     where: { tenantId: ctx.tenantId, kind: ChannelKind.BLUEBUBBLES },
-    select: { id: true },
+    select: { id: true, secretRef: true },
   });
   const data = {
     label: String(formData.get("label") ?? "").trim() || "BlueBubbles Mac mini",
     status: "configured",
-    config: { baseUrl, password },
+    config: { baseUrl },
+    secretRef: password ? encryptSecret(password) : existing?.secretRef ?? null,
   };
   if (existing) {
     await prisma.channelAccount.update({ where: { id: existing.id }, data });
@@ -340,10 +346,10 @@ export async function configureBlueBubblesAction(formData: FormData) {
 }
 
 export async function checkBlueBubblesAction() {
-  const s = await auth();
-  if (!s?.user?.id || !s.user.tenantId || !canEditBrokerageConfig(s.user.role)) {
+  const user = await requireTenantUser();
+  if (!canEditBrokerageConfig(user.role)) {
     throw new Error("Forbidden");
   }
-  await checkBlueBubblesHealth(prisma, s.user.tenantId);
+  await checkBlueBubblesHealth(prisma, user.tenantId);
   revalidatePath("/settings");
 }

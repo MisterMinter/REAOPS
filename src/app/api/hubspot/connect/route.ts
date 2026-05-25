@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { buildHubSpotInstallUrl, HubSpotError } from "@/lib/hubspot";
 import { canEditBrokerageConfig } from "@/lib/ops/auth";
+import { requireTenantUser } from "@/lib/session-guard";
 
 export async function GET(req: Request) {
-  const session = await auth();
-  const user = session?.user;
-  if (!user?.id || !user.tenantId || !canEditBrokerageConfig(user.role)) {
+  const user = await requireTenantUser().catch(() => null);
+  if (!user || !canEditBrokerageConfig(user.role)) {
     return NextResponse.redirect(new URL("/settings?error=hubspot-forbidden", req.url));
   }
 

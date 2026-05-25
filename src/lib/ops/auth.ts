@@ -1,16 +1,27 @@
-import { auth } from "@/auth";
+import {
+  canEditBrokerageConfig as canEditBrokerageConfigFromGuard,
+  requireAdminUser,
+  requireTenantUser,
+} from "@/lib/session-guard";
 
 export async function requireTenantActor() {
-  const session = await auth();
-  if (!session?.user?.id) throw new Error("Unauthorized");
-  if (!session.user.tenantId) throw new Error("Tenant required");
+  const user = await requireTenantUser();
   return {
-    id: session.user.id,
-    tenantId: session.user.tenantId,
-    role: session.user.role,
+    id: user.id,
+    tenantId: user.tenantId,
+    role: user.role,
+  };
+}
+
+export async function requireAdminActor() {
+  const user = await requireAdminUser();
+  return {
+    id: user.id,
+    tenantId: user.tenantId,
+    role: user.role,
   };
 }
 
 export function canEditBrokerageConfig(role: string | null | undefined): boolean {
-  return role === "ADMIN" || role === "BROKER_OWNER";
+  return canEditBrokerageConfigFromGuard(role);
 }

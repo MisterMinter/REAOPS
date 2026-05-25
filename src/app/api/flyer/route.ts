@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getGoogleAccessTokenForUser } from "@/lib/google-account-token";
 import { resolveLanguageModel } from "@/lib/ai-chat";
@@ -12,7 +11,9 @@ import { renderFlyerPdf, renderFlyerPng } from "@/lib/flyer-render";
 import { parseBrandKit } from "@/lib/marketing/brand-kit";
 import { sendEmail } from "@/lib/gmail-send";
 import { reviewContent, reviewToJson } from "@/lib/content-review";
+import { isFolderAllowedForTenant } from "@/lib/drive-folder-access";
 import { createComplianceReview, generateMarketingAsset } from "@/lib/ops/workflows";
+import { authzResponse, requireTenantUser } from "@/lib/session-guard";
 import { Readable } from "stream";
 
 const flyerCopySchema = z.object({
@@ -30,9 +31,11 @@ const flyerCopySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id || !session.user.tenantId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let user;
+  try {
+    user = await requireTenantUser();
+  } catch (error) {
+    return authzResponse(error);
   }
 
   const body = await req.json();
@@ -48,7 +51,7 @@ export async function POST(req: NextRequest) {
     recipientEmail?: string;
   };
 
-  const accessToken = await getGoogleAccessTokenForUser(session.user.id);
+  const accessToken = await getGoogleAccessTokenForUser(user.id);
   if (!accessToken) {
     return NextResponse.json(
       { error: "No Google token. Sign out and sign back in with Google." },
@@ -64,7 +67,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const tenantId = session.user.tenantId;
+  const tenantId = user.tenantId;
 
   const listing = listingId
     ? await prisma.cachedListing.findFirst({
@@ -101,6 +104,12 @@ export async function POST(req: NextRequest) {
       };
 
   const driveFolderId = listing?.driveFolderId ?? body.driveFolderId ?? null;
+  if (driveFolderId) {
+    const allowed = await isFolderAllowedForTenant(tenantId, driveFolderId, { accessToken });
+    if (!allowed) {
+      return NextResponse.json({ error: "Drive folder is outside this tenant." }, { status: 403 });
+    }
+  }
 
   let heroImage: { base64: string; mimeType: string } | null = null;
   if (accessToken && driveFolderId) {
@@ -195,7 +204,7 @@ export async function POST(req: NextRequest) {
   const copyText = `${copy.headline}\n\n${copy.tagline}\n\n${copy.featureBullets.join("\n")}\n\n${copy.ctaText}\n\n${brandKit.disclaimer}`;
   const review = await reviewContent({
     tenantId,
-    actorId: session.user.id,
+    actorId: user.id,
     kind: "FLYER",
     title: `Flyer - ${facts.address}`,
     content: copyText,
@@ -204,9 +213,9 @@ export async function POST(req: NextRequest) {
   if (review.status !== "PASS") {
     await createComplianceReview({
       actor: {
-        id: session.user.id,
+        id: user.id,
         tenantId,
-        role: session.user.role,
+        role: user.role,
       },
       title: `Review gated flyer: ${facts.address}`,
       summary: `Content review returned ${review.status}. ${review.reasons.join(" ")}`,
@@ -313,9 +322,9 @@ export async function POST(req: NextRequest) {
   try {
     await generateMarketingAsset({
       actor: {
-        id: session.user.id,
+        id: user.id,
         tenantId,
-        role: session.user.role,
+        role: user.role,
       },
       type: MarketingAssetType.FLYER,
       title: pdfName,
