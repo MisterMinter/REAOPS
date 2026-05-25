@@ -14,6 +14,7 @@ import {
 } from "@prisma/client";
 import { generateText } from "ai";
 import { resolveLanguageModel } from "@/lib/ai-chat";
+import { evaluateAutonomousAction } from "@/lib/agent-action-policy";
 import { sendChannelMessage } from "@/lib/channels";
 import {
   extractReviewStatus,
@@ -265,7 +266,22 @@ export async function draftMessage(input: {
   });
 
   if (!needsApproval && input.autoSend) {
-    return sendApprovedMessage({ prisma, actor: input.actor, draftId: draft.id });
+    const decision = await evaluateAutonomousAction({
+      prisma,
+      actor: input.actor,
+      actionId: "message_send",
+      channel,
+      recipient,
+      reviewStatus: review.status,
+      risk,
+      autoSend: true,
+      idempotencyParts: [draft.id],
+    });
+    await logAudit(prisma, input.actor, "action.policy.evaluate", "MessageDraft", draft.id, decision.auditMetadata);
+    if (decision.allowed) {
+      return sendApprovedMessage({ prisma, actor: input.actor, draftId: draft.id });
+    }
+    await logAudit(prisma, input.actor, "message.autosend_skipped", "MessageDraft", draft.id, decision.auditMetadata);
   }
 
   return draft;
@@ -494,6 +510,23 @@ export async function sendApprovedMessage(input: {
   }
   if (draft.requiresApproval && draft.status !== MessageDraftStatus.APPROVED) {
     throw new Error("Draft requires approval before sending.");
+  }
+
+  const policyDecision = await evaluateAutonomousAction({
+    prisma,
+    actor: input.actor,
+    actionId: "message_send",
+    channel: draft.channel,
+    recipient: draft.recipient || defaultRecipient(draft.contact, draft.channel) || "",
+    reviewStatus,
+    risk: draft.risk,
+    autoSend: false,
+    humanApproved: draft.status === MessageDraftStatus.APPROVED && draft.requiresApproval,
+    idempotencyParts: [draft.id],
+  });
+  await logAudit(prisma, input.actor, "action.policy.evaluate", "MessageDraft", draft.id, policyDecision.auditMetadata);
+  if (!policyDecision.allowed) {
+    throw new Error(`Action policy blocked send: ${policyDecision.reasons.join(" ")}`);
   }
 
   const accessToken =

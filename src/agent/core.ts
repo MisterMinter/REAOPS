@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { buildAgentContext, buildSystemPrompt } from "@/agent/system-prompt";
 import { loadAgentMemoryContext } from "@/lib/tenant-brain/agent-memory";
 import { ingestTenantBusinessFacts } from "@/lib/tenant-brain/ingest";
+import { assertAgentToolPolicies } from "@/lib/agent-action-policy";
 import { driveTools } from "@/agent/skills/drive";
 import { listingTools } from "@/agent/skills/listings";
 import { zillowTools } from "@/agent/skills/zillow";
@@ -93,6 +94,7 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
     ...analysisTools(toolCtx),
     ...flyerTools(toolCtx),
   };
+  assertAgentToolPolicies(Object.keys(allTools));
 
   const providersToTry = [primary, ...fallbackProviders(primary)];
   let lastError: unknown;

@@ -11,6 +11,11 @@ import {
 } from "@prisma/client";
 import { generateText } from "ai";
 import { resolveLanguageModel } from "@/lib/ai-chat";
+import {
+  AGENT_ACTION_POLICY_VERSION,
+  actionPolicySnapshot,
+} from "@/lib/agent-action-policy";
+import { extractReviewStatus } from "@/lib/content-review";
 import { ensureOpsDefaults } from "@/lib/ops/defaults";
 import { createAgentNotifications } from "@/lib/ops/notifications";
 import {
@@ -29,6 +34,9 @@ type LoopAction = {
   label: string;
   href?: string;
   status?: string;
+  skipped?: boolean;
+  policy?: ReturnType<typeof actionPolicySnapshot>;
+  reviewStatus?: string | null;
 };
 
 type LoopObservation = {
@@ -102,6 +110,7 @@ export async function runAgentLoop(input: {
         summary: result.summary,
         observations: result.observations as unknown as Prisma.InputJsonValue,
         actions: result.actions as unknown as Prisma.InputJsonValue,
+        metadata: buildAgentRunMetadata(result) as unknown as Prisma.InputJsonValue,
         finishedAt: new Date(),
       },
     });
@@ -121,22 +130,24 @@ export async function runAgentLoop(input: {
       },
     });
 
-    if (shouldNotify(input.trigger, input.kind, result.actions.length)) {
+    const actionCount = result.actions.filter((action) => !action.skipped).length;
+    if (shouldNotify(input.trigger, input.kind, actionCount)) {
       await createAgentNotifications({
         prisma,
         tenantId: input.tenantId,
         agentRunId: run.id,
-        title: notificationTitle(loop.name, result.actions.length),
+        title: notificationTitle(loop.name, actionCount),
         body: result.summary,
         href: result.actions.length === 1 ? result.actions[0].href ?? "/command" : "/command",
         severity:
-          result.actions.length > 0
+          actionCount > 0
             ? AgentNotificationSeverity.ACTION
             : AgentNotificationSeverity.INFO,
         metadata: {
           kind: input.kind,
           trigger: input.trigger ?? "manual",
-          actionCount: result.actions.length,
+          actionCount,
+          skippedActionCount: result.actions.filter((action) => action.skipped).length,
         },
       });
     }
@@ -329,6 +340,19 @@ async function inspectFollowUpRecovery(
         label: `Created task and draft for ${name}`,
         href: "/follow-up",
         status: `draft ${draft.status}`,
+        policy: actionPolicySnapshot("followup_create_task"),
+        reviewStatus: extractReviewStatus(draft.metadata),
+      });
+    }
+    for (const contact of contacts.filter((c) => c.followUpTasks.length > 0).slice(0, 5)) {
+      actions.push({
+        type: "follow_up_task",
+        id: contact.followUpTasks[0]?.id,
+        label: `Skipped ${contactDisplayName(contact)} because an active follow-up already exists`,
+        href: "/follow-up",
+        status: "skipped_existing_task",
+        skipped: true,
+        policy: actionPolicySnapshot("followup_create_task"),
       });
     }
   }
@@ -388,6 +412,19 @@ async function inspectMarketingPlanning(
         label: `Created social plan for ${listing.shortAddress || listing.address}`,
         href: "/marketing",
         status: asset.status,
+        policy: actionPolicySnapshot("marketing_asset_create"),
+        reviewStatus: extractReviewStatus(asset.metadata),
+      });
+    }
+    for (const listing of listings.filter((l) => l.marketingAssets.length > 0).slice(0, 5)) {
+      actions.push({
+        type: "marketing_asset",
+        id: listing.marketingAssets[0]?.id,
+        label: `Skipped ${listing.shortAddress || listing.address} because a social plan already exists`,
+        href: "/marketing",
+        status: "skipped_existing_asset",
+        skipped: true,
+        policy: actionPolicySnapshot("marketing_asset_create"),
       });
     }
   }
@@ -449,7 +486,18 @@ async function inspectCompliance(
         },
         select: { id: true },
       });
-      if (existing) continue;
+      if (existing) {
+        actions.push({
+          type: "compliance_review",
+          id: existing.id,
+          label: `Skipped ${draft.subject ?? "draft"} because an equivalent compliance review already exists`,
+          href: "/compliance",
+          status: "skipped_duplicate_review",
+          skipped: true,
+          policy: actionPolicySnapshot("compliance_review_create"),
+        });
+        continue;
+      }
       const review = await createComplianceReview({
         prisma,
         actor,
@@ -469,6 +517,7 @@ async function inspectCompliance(
         label: `Created compliance review for ${draft.contact ? contactDisplayName(draft.contact) : "draft"}`,
         href: "/compliance",
         status: review.status,
+        policy: actionPolicySnapshot("compliance_review_create"),
       });
     }
   }
@@ -605,4 +654,39 @@ function notificationTitle(loopName: string, actionCount: number) {
   if (actionCount === 0) return `${loopName} checked in`;
   if (actionCount === 1) return `${loopName} created 1 action`;
   return `${loopName} created ${actionCount} actions`;
+}
+
+function buildAgentRunMetadata(result: {
+  observations: LoopObservation[];
+  actions: LoopAction[];
+}) {
+  const skippedActions = result.actions.filter((action) => action.skipped);
+  const actionsTaken = result.actions.filter((action) => !action.skipped);
+  return {
+    actionPolicyVersion: AGENT_ACTION_POLICY_VERSION,
+    actionsTaken: actionsTaken.length,
+    skippedActions: skippedActions.map((action) => ({
+      type: action.type,
+      id: action.id ?? null,
+      label: action.label,
+      status: action.status ?? null,
+      policy: action.policy,
+    })),
+    reviewResults: result.actions
+      .filter((action) => action.reviewStatus)
+      .map((action) => ({
+        type: action.type,
+        id: action.id ?? null,
+        reviewStatus: action.reviewStatus,
+      })),
+    policySnapshots: uniquePolicies(result.actions),
+    memoryCitations: [],
+  };
+}
+
+function uniquePolicies(actions: LoopAction[]) {
+  const policies = actions
+    .map((action) => action.policy)
+    .filter((policy): policy is NonNullable<LoopAction["policy"]> => Boolean(policy));
+  return policies.filter((policy, index, all) => all.findIndex((item) => item.id === policy.id) === index);
 }

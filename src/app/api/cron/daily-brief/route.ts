@@ -224,6 +224,15 @@ async function persistDailyBriefRun(tenantId: string, brief: DailyBriefData) {
           ? [{ type: "marketing", label: `${brief.campaignGapCount} campaign/listing gap(s)`, href: "/marketing" }]
           : []),
       ] as Prisma.InputJsonValue,
+      metadata: {
+        memoryCitations: brief.tenantBrainMemories
+          .map((memory) => memory.source || [memory.subjectType, memory.subjectId].filter(Boolean).join(":") || memory.title)
+          .filter(Boolean)
+          .slice(0, 10),
+        tenantBrainError: brief.tenantBrainError,
+        reviewResults: [],
+        skippedActions: [],
+      } as Prisma.InputJsonValue,
       finishedAt: new Date(),
     },
   });
