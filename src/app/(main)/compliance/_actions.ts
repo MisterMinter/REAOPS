@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireTenantActor } from "@/lib/ops/auth";
 import { createComplianceReview } from "@/lib/ops/workflows";
+import { getTenantBrain } from "@/lib/tenant-brain";
 
 function parseDate(raw: FormDataEntryValue | null): Date | null {
   const value = String(raw ?? "").trim();
@@ -51,6 +52,7 @@ export async function updateComplianceStatusAction(formData: FormData) {
   const actor = await requireTenantActor();
   const reviewId = String(formData.get("reviewId") ?? "").trim();
   const status = String(formData.get("status") ?? "OPEN") as ComplianceReviewStatus;
+  const reason = String(formData.get("reason") ?? "").trim() || null;
   await prisma.complianceReview.updateMany({
     where: { id: reviewId, tenantId: actor.tenantId },
     data: {
@@ -66,9 +68,31 @@ export async function updateComplianceStatusAction(formData: FormData) {
       action: "compliance.status",
       subjectType: "ComplianceReview",
       subjectId: reviewId,
-      metadata: { status },
+      metadata: { status, reason },
     },
   });
+  await getTenantBrain()
+    .captureDecision({
+      tenantId: actor.tenantId,
+      userId: actor.id,
+      subjectType: "ComplianceReview",
+      subjectId: reviewId,
+      decision: status,
+      rationale: reason,
+      metadata: { source: "review_queue" },
+    })
+    .catch(async (e) => {
+      await prisma.auditEvent.create({
+        data: {
+          tenantId: actor.tenantId,
+          userId: actor.id,
+          action: "tenant_brain.capture_decision_failed",
+          subjectType: "ComplianceReview",
+          subjectId: reviewId,
+          metadata: { error: e instanceof Error ? e.message : "Tenant brain decision capture failed." },
+        },
+      });
+    });
   revalidatePath("/compliance");
   revalidatePath("/command");
 }

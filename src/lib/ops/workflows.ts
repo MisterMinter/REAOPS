@@ -393,7 +393,16 @@ export async function reviseDraft(input: {
       requiresApproval: needsApproval,
       status: needsApproval ? MessageDraftStatus.WAITING_APPROVAL : MessageDraftStatus.APPROVED,
       approvedAt: null,
-      metadata: mergeMetadataWithReview(draft.metadata as Prisma.InputJsonValue, review),
+      metadata: mergeMetadataWithReview(
+        appendDraftRevisionMetadata(draft.metadata as Prisma.InputJsonValue, {
+          revisedAt: new Date().toISOString(),
+          previousSubject: draft.subject,
+          previousBody: draft.body,
+          previousRecipient: draft.recipient,
+          previousReviewStatus: extractReviewStatus(draft.metadata),
+        }),
+        review
+      ),
     },
   });
 
@@ -861,6 +870,21 @@ function listingFactsForReview(listing: {
     sqft: listing.sqft ?? null,
     status: listing.status ?? null,
     features: listing.features ?? null,
+  };
+}
+
+function appendDraftRevisionMetadata(
+  metadata: Prisma.InputJsonValue | null | undefined,
+  revision: Prisma.InputJsonValue
+): Prisma.InputJsonValue {
+  const base =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? (metadata as Record<string, unknown>)
+      : {};
+  const revisions = Array.isArray(base.revisions) ? base.revisions : [];
+  return {
+    ...base,
+    revisions: [...revisions, revision].slice(-5),
   };
 }
 

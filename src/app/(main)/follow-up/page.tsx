@@ -180,7 +180,10 @@ export default async function FollowUpPage() {
             {drafts.length === 0 ? (
               <p className="text-sm text-[var(--txt3)]">No drafts yet.</p>
             ) : (
-              drafts.map((draft) => (
+              drafts.map((draft) => {
+                const contentReview = contentReviewFromMetadata(draft.metadata);
+                const revisions = revisionHistoryFromMetadata(draft.metadata);
+                return (
                 <article key={draft.id} className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -195,6 +198,55 @@ export default async function FollowUpPage() {
                     </span>
                   </div>
                   <p className="mt-3 whitespace-pre-wrap text-sm text-[var(--txt2)]">{draft.body}</p>
+                  {contentReview && (
+                    <div className="mt-3 rounded-md border border-[var(--border)] bg-[var(--card)] p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-sm font-medium text-[var(--txt)]">Review gate · {contentReview.status}</div>
+                        <span className="text-xs text-[var(--txt3)]">{contentReview.reviewer ?? "layered"}</span>
+                      </div>
+                      {contentReview.reasons.length > 0 && (
+                        <ul className="mt-2 list-inside list-disc text-sm text-[var(--amber)]">
+                          {contentReview.reasons.map((reason) => (
+                            <li key={reason}>{reason}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {contentReview.suggestedRevisions.length > 0 && (
+                        <ul className="mt-2 list-inside list-disc text-sm text-[var(--txt2)]">
+                          {contentReview.suggestedRevisions.map((revision) => (
+                            <li key={revision}>{revision}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {contentReview.layers.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {contentReview.layers.map((layer) => (
+                            <span key={`${layer.name}:${layer.status}`} className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--txt3)]">
+                              {layer.name}: {layer.status}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {revisions.length > 0 && (
+                    <details className="mt-3 rounded-md border border-[var(--border)] bg-[var(--card)] p-3">
+                      <summary className="cursor-pointer text-sm font-medium text-[var(--txt)]">Compare previous revisions</summary>
+                      <div className="mt-3 space-y-3">
+                        {revisions.map((revision, idx) => (
+                          <div key={`${revision.revisedAt}:${idx}`} className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3">
+                            <div className="text-xs text-[var(--txt3)]">
+                              {revision.revisedAt} · previous review {revision.previousReviewStatus ?? "unknown"}
+                            </div>
+                            {revision.previousSubject && (
+                              <div className="mt-2 text-sm font-medium text-[var(--txt)]">{revision.previousSubject}</div>
+                            )}
+                            <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--txt2)]">{revision.previousBody}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
                   {draft.status !== MessageDraftStatus.SENT &&
                     draft.status !== MessageDraftStatus.SKIPPED &&
                     draft.status !== MessageDraftStatus.FAILED && (
@@ -250,11 +302,64 @@ export default async function FollowUpPage() {
                     )}
                   </div>
                 </article>
-              ))
+              );
+              })
             )}
           </div>
         </section>
       </div>
     </div>
   );
+}
+
+function contentReviewFromMetadata(metadata: unknown) {
+  const review = objectFrom(objectFrom(metadata).contentReview);
+  if (!review.status) return null;
+  const layers = Array.isArray(review.layers)
+    ? review.layers
+        .map((layer) => {
+          const obj = objectFrom(layer);
+          return {
+            name: stringFrom(obj.name) ?? "layer",
+            status: stringFrom(obj.status) ?? "PASS",
+          };
+        })
+        .slice(0, 8)
+    : [];
+  return {
+    status: stringFrom(review.status) ?? "UNKNOWN",
+    reviewer: stringFrom(review.reviewer),
+    reasons: stringArrayFrom(review.reasons),
+    suggestedRevisions: stringArrayFrom(review.suggestedRevisions),
+    layers,
+  };
+}
+
+function revisionHistoryFromMetadata(metadata: unknown) {
+  const revisions = objectFrom(metadata).revisions;
+  if (!Array.isArray(revisions)) return [];
+  return revisions
+    .map((revision) => {
+      const obj = objectFrom(revision);
+      return {
+        revisedAt: stringFrom(obj.revisedAt) ?? "Previous revision",
+        previousSubject: stringFrom(obj.previousSubject),
+        previousBody: stringFrom(obj.previousBody) ?? "",
+        previousReviewStatus: stringFrom(obj.previousReviewStatus),
+      };
+    })
+    .filter((revision) => revision.previousBody)
+    .reverse();
+}
+
+function objectFrom(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function stringArrayFrom(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function stringFrom(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }

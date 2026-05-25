@@ -1,6 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { reviewContent } from "@/lib/content-review";
+import { __resetTenantBrainForTests } from "@/lib/tenant-brain";
+
+const originalEnv = { ...process.env };
+const originalFetch = globalThis.fetch;
+
+test.afterEach(() => {
+  process.env = { ...originalEnv };
+  globalThis.fetch = originalFetch;
+  __resetTenantBrainForTests();
+});
 
 const prisma = {
   tenant: {
@@ -28,6 +38,7 @@ test("passes specific social copy that matches source facts", async () => {
   });
 
   assert.equal(review.status, "PASS");
+  assert.ok(review.layers.some((layer) => layer.name === "source_facts"));
 });
 
 test("blocks fair-housing and unsupported safety language", async () => {
@@ -77,4 +88,34 @@ test("requires disclaimer for Drive docs", async () => {
 
   assert.equal(review.status, "NEEDS_HUMAN");
   assert.match(review.reasons.join(" "), /disclaimer/i);
+});
+
+test("routes cited GBrain brand memory to human review", async () => {
+  process.env.GBRAIN_BASE_URL = "https://gbrain.example";
+  process.env.GBRAIN_QUERY_PATH = "/query";
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        memories: [
+          {
+            id: "m1",
+            title: "Brand approval SOP",
+            content: "Social posts about price improvements require broker approval before publishing.",
+            source: "prisma:SopTemplate",
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    )) as typeof fetch;
+
+  const review = await reviewContent({
+    prisma: prisma as never,
+    tenantId: "tenant_a",
+    kind: "SOCIAL_POST",
+    content: "Price improved at 123 Main. Message us for details.",
+  });
+
+  assert.equal(review.status, "NEEDS_HUMAN");
+  assert.match(review.reasons.join(" "), /GBrain memory/i);
+  assert.deepEqual(review.citations, ["prisma:SopTemplate"]);
 });

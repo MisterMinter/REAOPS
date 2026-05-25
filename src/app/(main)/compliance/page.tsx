@@ -98,45 +98,128 @@ export default async function CompliancePage() {
           {reviews.length === 0 ? (
             <p className="text-sm text-[var(--txt3)]">No compliance reviews yet.</p>
           ) : (
-            reviews.map((review) => (
-              <article key={review.id} className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-medium text-[var(--txt)]">{review.title}</h3>
-                    <p className="mt-1 text-xs text-[var(--txt3)]">
-                      {review.status} · {review.sopTemplate?.title ?? "No SOP"} ·{" "}
-                      {review.deadlineAt ? `deadline ${review.deadlineAt.toLocaleString()}` : "no deadline"}
-                    </p>
-                    <p className="mt-1 text-xs text-[var(--txt3)]">
-                      {review.contact ? contactDisplayName(review.contact) : "No contact"} ·{" "}
-                      {review.listing?.shortAddress ?? review.listing?.address ?? "No listing"}
-                    </p>
+            reviews.map((review) => {
+              const contentReview = contentReviewFromFlags(review.flags);
+              return (
+                <article key={review.id} className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-medium text-[var(--txt)]">{review.title}</h3>
+                      <p className="mt-1 text-xs text-[var(--txt3)]">
+                        {review.status} · {review.sopTemplate?.title ?? "No SOP"} ·{" "}
+                        {review.deadlineAt ? `deadline ${review.deadlineAt.toLocaleString()}` : "no deadline"}
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--txt3)]">
+                        {review.contact ? contactDisplayName(review.contact) : "No contact"} ·{" "}
+                        {review.listing?.shortAddress ?? review.listing?.address ?? "No listing"}
+                      </p>
+                    </div>
+                    <form action={updateComplianceStatusAction} className="flex flex-wrap gap-2">
+                      <input type="hidden" name="reviewId" value={review.id} />
+                      <select name="status" defaultValue={review.status} className="rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-xs">
+                        {Object.values(ComplianceReviewStatus).map((status) => (
+                          <option key={status} value={status}>{status}</option>
+                        ))}
+                      </select>
+                      <input name="reason" placeholder="Decision note" className="rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-xs" />
+                      <button type="submit" className="rounded-md bg-[var(--teal)]/20 px-3 py-1 text-xs font-semibold text-[var(--teal)]">
+                        Update
+                      </button>
+                    </form>
                   </div>
-                  <form action={updateComplianceStatusAction} className="flex flex-wrap gap-2">
-                    <input type="hidden" name="reviewId" value={review.id} />
-                    <select name="status" defaultValue={review.status} className="rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-xs">
-                      {Object.values(ComplianceReviewStatus).map((status) => (
-                        <option key={status} value={status}>{status}</option>
+                  {review.summary && <p className="mt-3 text-sm text-[var(--txt2)]">{review.summary}</p>}
+                  {contentReview && (
+                    <div className="mt-3 rounded-md border border-[var(--border)] bg-[var(--card)] p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-sm font-medium text-[var(--txt)]">Content review · {contentReview.status}</div>
+                        {contentReview.reviewer && <span className="text-xs text-[var(--txt3)]">{contentReview.reviewer}</span>}
+                      </div>
+                      {contentReview.reasons.length > 0 && (
+                        <ul className="mt-2 list-inside list-disc text-sm text-[var(--amber)]">
+                          {contentReview.reasons.map((reason) => (
+                            <li key={reason}>{reason}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {contentReview.suggestedRevisions.length > 0 && (
+                        <div className="mt-3">
+                          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Suggested revisions</div>
+                          <ul className="mt-1 list-inside list-disc text-sm text-[var(--txt2)]">
+                            {contentReview.suggestedRevisions.map((revision) => (
+                              <li key={revision}>{revision}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {contentReview.layers.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {contentReview.layers.map((layer) => (
+                            <span key={`${layer.name}:${layer.status}`} className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--txt3)]">
+                              {layer.name}: {layer.status}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {contentReview.citations.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {contentReview.citations.map((citation) => (
+                            <span key={citation} className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--teal)]">
+                              {citation}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {Array.isArray(review.flags) && review.flags.length > 0 && (
+                    <ul className="mt-3 list-inside list-disc text-sm text-[var(--amber)]">
+                      {review.flags.map((flag, idx) => (
+                        <li key={idx}>{String(flag)}</li>
                       ))}
-                    </select>
-                    <button type="submit" className="rounded-md bg-[var(--teal)]/20 px-3 py-1 text-xs font-semibold text-[var(--teal)]">
-                      Update
-                    </button>
-                  </form>
-                </div>
-                {review.summary && <p className="mt-3 text-sm text-[var(--txt2)]">{review.summary}</p>}
-                {Array.isArray(review.flags) && review.flags.length > 0 && (
-                  <ul className="mt-3 list-inside list-disc text-sm text-[var(--amber)]">
-                    {review.flags.map((flag, idx) => (
-                      <li key={idx}>{String(flag)}</li>
-                    ))}
-                  </ul>
-                )}
-              </article>
-            ))
+                    </ul>
+                  )}
+                </article>
+              );
+            })
           )}
         </div>
       </section>
     </div>
   );
+}
+
+function contentReviewFromFlags(flags: unknown) {
+  const review = objectFrom(objectFrom(flags).review);
+  if (!review.status) return null;
+  const layers = Array.isArray(review.layers)
+    ? review.layers
+        .map((layer) => {
+          const obj = objectFrom(layer);
+          return {
+            name: stringFrom(obj.name) ?? "layer",
+            status: stringFrom(obj.status) ?? "PASS",
+          };
+        })
+        .slice(0, 8)
+    : [];
+  return {
+    status: stringFrom(review.status) ?? "UNKNOWN",
+    reviewer: stringFrom(review.reviewer),
+    reasons: stringArrayFrom(review.reasons),
+    suggestedRevisions: stringArrayFrom(review.suggestedRevisions),
+    citations: stringArrayFrom(review.citations),
+    layers,
+  };
+}
+
+function objectFrom(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function stringArrayFrom(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function stringFrom(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
