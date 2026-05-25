@@ -1,6 +1,6 @@
 import type { PrismaClient, UserRole } from "@prisma/client";
-import { getTenantBrain } from "@/lib/tenant-brain";
 import { parseBrandKit } from "@/lib/marketing/brand-kit";
+import { getTenantBrainOpsSnapshot } from "@/lib/tenant-brain/ops";
 
 export type PortalHealthStatus = "ready" | "warning" | "blocked";
 
@@ -102,7 +102,12 @@ export async function getTenantPortalSnapshot(
   const brandKit = parseBrandKit(tenant.brandKit);
   const blueBubbles = tenant.channelAccounts.find((account) => account.kind === "BLUEBUBBLES");
   const telegramLinked = members.some((member) => member.isActive);
-  const brainHealth = await getTenantBrain().health();
+  const memory = await getTenantBrainOpsSnapshot({
+    prisma,
+    tenantId: tenant.id,
+    userId: user.id,
+  });
+  const brainHealth = memory.health;
   const activeLoops = tenant.agentLoops.filter((loop) => loop.enabled);
   const defaultIdentity = tenant.sendingIdentities.find((identity) => identity.isDefault);
 
@@ -148,8 +153,10 @@ export async function getTenantPortalSnapshot(
     {
       key: "gbrain",
       label: "GBrain memory",
-      status: brainHealth.ok && brainHealth.configured ? "ready" : "warning",
-      detail: brainHealth.configured ? brainHealth.error ?? "Memory provider configured." : "Memory provider not configured.",
+      status: brainHealth.ok && brainHealth.configured && memory.isolation.status !== "failed" ? "ready" : "warning",
+      detail: brainHealth.configured
+        ? brainHealth.error ?? `${memory.documentCount} fact document(s) ready; isolation ${memory.isolation.status}.`
+        : "Memory provider not configured.",
       requiredForGoLive: true,
       href: "/settings",
     },
@@ -212,6 +219,7 @@ export async function getTenantPortalSnapshot(
       recentRuns: recentRuns.length,
       recentJobs: recentJobs.length,
     },
+    memory,
     recentRuns,
     recentJobs,
     recentAudit,

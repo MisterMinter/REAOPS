@@ -6,6 +6,8 @@ import { requireActiveUser } from "@/lib/session-guard";
 import { getTenantPortalSnapshot, type PortalHealthItem } from "@/lib/tenant-portal";
 import {
   createTenantMemberAction,
+  runTenantMemoryBackfillAction,
+  runTenantMemoryMaintenanceAction,
   setTenantMemberActiveAction,
 } from "@/app/(main)/start/_actions";
 
@@ -21,8 +23,10 @@ function statusLabel(status: PortalHealthItem["status"]) {
   return "Needs attention";
 }
 
-function formatDate(value: Date | null) {
-  return value ? value.toLocaleString() : "Never";
+function formatDate(value: Date | string | null | undefined) {
+  if (!value) return "Never";
+  const date = typeof value === "string" ? new Date(value) : value;
+  return Number.isNaN(date.getTime()) ? "Never" : date.toLocaleString();
 }
 
 export default async function StartPage({
@@ -58,6 +62,18 @@ export default async function StartPage({
       </div>
     );
   }
+
+  const memoryGaps = snapshot.memory.providerGaps.gaps.slice(0, 6);
+  const staleFacts = [
+    ...snapshot.memory.providerGaps.stale,
+    ...snapshot.memory.localStaleFacts,
+  ].slice(0, 8);
+  const memoryStatus =
+    snapshot.memory.health.ok && snapshot.memory.health.configured && snapshot.memory.isolation.status !== "failed"
+      ? "ready"
+      : snapshot.memory.isolation.status === "failed"
+        ? "blocked"
+        : "warning";
 
   return (
     <div className="space-y-8">
@@ -127,6 +143,85 @@ export default async function StartPage({
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="font-display text-xl text-[var(--gold)]">GBrain Memory</h2>
+              <p className="mt-1 text-sm text-[var(--txt3)]">
+                Last sync, backfill controls, citations, stale facts, and tenant isolation status.
+              </p>
+            </div>
+            <span className={`w-fit rounded-md border px-2 py-1 text-xs ${statusClass(memoryStatus)}`}>
+              {statusLabel(memoryStatus)}
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <MiniStat label="Provider" value={snapshot.memory.health.provider} />
+            <MiniStat label="Fact docs" value={snapshot.memory.documentCount} />
+            <MiniStat label="Last ingest" value={formatDate(snapshot.memory.lastIngest?.at)} />
+            <MiniStat label="Failures 24h" value={snapshot.memory.failedOperations24h} />
+          </div>
+
+          <div className="mt-4 rounded-md border border-[var(--border)] bg-[var(--surface)] p-3">
+            <div className="text-sm font-medium text-[var(--txt)]">Isolation</div>
+            <p className="mt-1 text-xs text-[var(--txt3)]">{snapshot.memory.isolation.detail}</p>
+            <p className="mt-2 text-xs text-[var(--txt3)]">Checked {formatDate(snapshot.memory.isolation.checkedAt)}</p>
+          </div>
+
+          {snapshot.memory.citations.length > 0 && (
+            <div className="mt-4">
+              <div className="text-sm font-medium text-[var(--txt)]">Recent citations</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {snapshot.memory.citations.map((citation) => (
+                  <span key={citation} className="rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--txt3)]">
+                    {citation}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {snapshot.canManageMembers && (
+            <div className="mt-4 flex flex-wrap gap-3">
+              <form action={runTenantMemoryBackfillAction}>
+                <button className="rounded-md bg-[var(--teal)]/20 px-4 py-2 text-sm font-semibold text-[var(--teal)]">
+                  Backfill memory
+                </button>
+              </form>
+              <form action={runTenantMemoryMaintenanceAction}>
+                <button className="rounded-md border border-[var(--border2)] px-4 py-2 text-sm font-semibold text-[var(--txt2)]">
+                  Consolidate memory
+                </button>
+              </form>
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Panel title="Memory Gaps" href="/settings">
+            {memoryGaps.length === 0 ? (
+              <EmptyLine>No provider gaps reported.</EmptyLine>
+            ) : (
+              memoryGaps.map((gap) => (
+                <TimelineLine key={gap.id} title={`${gap.title} - ${gap.severity}`} detail={gap.detail} />
+              ))
+            )}
+          </Panel>
+
+          <Panel title="Stale Facts" href="/follow-up">
+            {staleFacts.length === 0 ? (
+              <EmptyLine>No stale facts detected.</EmptyLine>
+            ) : (
+              staleFacts.map((gap) => (
+                <TimelineLine key={gap.id} title={`${gap.title} - ${gap.severity}`} detail={gap.detail} />
+              ))
+            )}
+          </Panel>
         </div>
       </section>
 
@@ -222,6 +317,15 @@ function Metric({ label, value, href }: { label: string; value: string | number;
   return href ? <Link href={href}>{body}</Link> : body;
 }
 
+function MiniStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3">
+      <div className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">{label}</div>
+      <div className="mt-1 text-sm font-medium text-[var(--txt)]">{value}</div>
+    </div>
+  );
+}
+
 function LinkButton({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link href={href} className="rounded-md bg-[var(--gold)] px-4 py-2 text-sm font-semibold text-[var(--bg)]">
@@ -262,5 +366,7 @@ function errorText(error: string) {
   if (error === "member-exists") return "A user with that email already exists.";
   if (error === "self-deactivate") return "You cannot deactivate yourself.";
   if (error === "member") return "Member could not be updated.";
+  if (error === "memory-busy") return "Memory job is already running.";
+  if (error === "memory") return "Memory operation failed.";
   return "Something went wrong.";
 }

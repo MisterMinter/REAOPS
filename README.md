@@ -48,7 +48,7 @@ npm run dev
 
 **Minimum env vars:** `DATABASE_URL`, `AUTH_SECRET`, `NEXTAUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and at least one AI key (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY`).
 
-**Optional tenant brain:** set `GBRAIN_BASE_URL` and `GBRAIN_API_KEY` to enable the shared GBrain memory gateway. If unset, the app runs with Prisma/tool context only.
+**Optional tenant brain:** set `GBRAIN_BASE_URL` and `GBRAIN_API_KEY` to enable the shared GBrain memory gateway. If unset, the app runs with Prisma/tool context only. The tenant portal exposes memory health, backfill, gap/staleness checks, citations, and isolation verification.
 
 Google sign-in only works for emails already in the `User` table. The seed creates the first platform admin. Add others under **Admin → Users** before they sign in.
 
@@ -74,6 +74,7 @@ The app requests: `openid`, `email`, `profile`, `drive` (full), `calendar`, `gma
 - **Telegram** — set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`, then register the webhook pointing to `https://reaops.com/api/agent/telegram?secret=<SECRET>`.
 - **Cron secrets** — set `CRON_SECRET`, `ZILLOW_SYNC_SECRET`, and `TELEGRAM_WEBHOOK_SECRET`; production routes fail closed when these are missing.
 - **Health checks** — `/api/health` is shallow; `/api/health?deep=1` checks GBrain, jobs, channel config, and recent failures.
+- **Cron routes** — call `/api/cron/daily-brief`, `/api/cron/agent-loops`, and `/api/cron/tenant-brain` with `Authorization: Bearer $CRON_SECRET` for briefs, autonomous loops, and scheduled GBrain backfill/consolidation.
 - **Build:** `npm run build`
 - **Start:** `npx prisma migrate deploy && npm run start`
 

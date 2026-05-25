@@ -5,6 +5,10 @@ import { redirect } from "next/navigation";
 import { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireTenantUser } from "@/lib/session-guard";
+import {
+  backfillTenantBrain,
+  maintainTenantBrain,
+} from "@/lib/tenant-brain/ops";
 
 const MEMBER_ROLES = [UserRole.BROKER_OWNER, UserRole.AGENT] as const;
 
@@ -85,4 +89,44 @@ export async function setTenantMemberActiveAction(formData: FormData) {
 
   revalidatePath("/start");
   redirect("/start?saved=member-status");
+}
+
+export async function runTenantMemoryBackfillAction() {
+  const actor = await requireMemberManager();
+  let destination = "/start?saved=memory-backfill";
+  try {
+    const job = await backfillTenantBrain({
+      prisma,
+      tenantId: actor.tenantId,
+      userId: actor.id,
+      trigger: "portal",
+      reason: "portal_memory_backfill",
+    });
+    if (job.status === "skipped") destination = "/start?error=memory-busy";
+  } catch {
+    destination = "/start?error=memory";
+  }
+
+  revalidatePath("/start");
+  redirect(destination);
+}
+
+export async function runTenantMemoryMaintenanceAction() {
+  const actor = await requireMemberManager();
+  let destination = "/start?saved=memory-maintenance";
+  try {
+    const job = await maintainTenantBrain({
+      prisma,
+      tenantId: actor.tenantId,
+      userId: actor.id,
+      trigger: "portal",
+      reason: "portal_memory_maintenance",
+    });
+    if (job.status === "skipped") destination = "/start?error=memory-busy";
+  } catch {
+    destination = "/start?error=memory";
+  }
+
+  revalidatePath("/start");
+  redirect(destination);
 }
