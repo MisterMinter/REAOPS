@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ChannelKind } from "@prisma/client";
 import { sendTelegramMessages } from "@/agent/telegram";
 import { runEnabledAgentLoops } from "@/lib/agent-loops/runner";
+import { withJobRun } from "@/lib/jobs";
 import { markNotificationsDelivered } from "@/lib/ops/notifications";
 import { prisma } from "@/lib/prisma";
 import { requireRouteSecret } from "@/lib/route-security";
@@ -22,29 +23,60 @@ export async function GET(req: NextRequest) {
     tenant: string;
     runs: { id: string; kind: string; actionsCreated: number }[];
     telegramDelivered?: number;
+    jobRunId?: string;
+    skipped?: boolean;
     error?: string;
   }[] = [];
 
   for (const tenant of tenants) {
     try {
-      const runs = await runEnabledAgentLoops({
+      const job = await withJobRun({
+        prisma,
         tenantId: tenant.id,
+        kind: "agent_loops",
+        key: `agent-loops:${tenant.id}`,
         trigger: "cron",
-        respectCadence: true,
+        ttlMs: 20 * 60 * 1000,
+        metadata: { tenantName: tenant.name },
+        summarize: (result) => `Ran ${result.runs.length} due agent loop(s).`,
+        resultMetadata: (result) => ({
+          tenantName: tenant.name,
+          runs: result.runs.length,
+          telegramDelivered: result.telegramDelivered,
+        }),
+        run: async () => {
+          const runs = await runEnabledAgentLoops({
+            tenantId: tenant.id,
+            trigger: "cron",
+            respectCadence: true,
+          });
+          const telegramDelivered = await deliverTelegramUpdates(
+            tenant.id,
+            runs.map((run) => run.runId)
+          );
+          return {
+            tenant: tenant.name,
+            runs: runs.map((run) => ({
+              id: run.runId,
+              kind: run.kind,
+              actionsCreated: run.actions.length,
+            })),
+            telegramDelivered,
+          };
+        },
       });
-      const telegramDelivered = await deliverTelegramUpdates(
-        tenant.id,
-        runs.map((run) => run.runId)
+
+      results.push(
+        job.status === "skipped"
+          ? {
+              tenant: tenant.name,
+              runs: [],
+              jobRunId: job.jobRunId,
+              skipped: true,
+              error: "Skipped because another agent-loop run is active.",
+            }
+          : { ...job.result, jobRunId: job.jobRunId }
       );
-      results.push({
-        tenant: tenant.name,
-        runs: runs.map((run) => ({
-          id: run.runId,
-          kind: run.kind,
-          actionsCreated: run.actions.length,
-        })),
-        telegramDelivered,
-      });
     } catch (e) {
       console.error(`[agent-loops-cron] Failed for tenant ${tenant.name}:`, e);
       results.push({

@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/reaops?schema=public
+      AUTH_SECRET: ci-auth-secret-ci-auth-secret-ci-auth-secret
+      NEXTAUTH_URL: http://localhost:3000
+      GOOGLE_CLIENT_ID: ci-google-client
+      GOOGLE_CLIENT_SECRET: ci-google-secret
+      TOKEN_ENCRYPTION_KEY: ci-token-encryption-key-minimum-32-chars
+      CRON_SECRET: ci-cron-secret
+      ZILLOW_SYNC_SECRET: ci-zillow-secret
+      TELEGRAM_WEBHOOK_SECRET: ci-telegram-secret
+      AI_PROVIDER: openai
+      OPENAI_API_KEY: ci-openai-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run test
+      - run: npx tsc --noEmit
+      - run: npm run build

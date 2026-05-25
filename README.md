@@ -72,6 +72,8 @@ The app requests: `openid`, `email`, `profile`, `drive` (full), `calendar`, `gma
 - **Google Cloud Console** — authorized redirect URI: `https://reaops.com/api/auth/callback/google`.
 - **AI keys** — set at least one of `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`.
 - **Telegram** — set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`, then register the webhook pointing to `https://reaops.com/api/agent/telegram?secret=<SECRET>`.
+- **Cron secrets** — set `CRON_SECRET`, `ZILLOW_SYNC_SECRET`, and `TELEGRAM_WEBHOOK_SECRET`; production routes fail closed when these are missing.
+- **Health checks** — `/api/health` is shallow; `/api/health?deep=1` checks GBrain, jobs, channel config, and recent failures.
 - **Build:** `npm run build`
 - **Start:** `npx prisma migrate deploy && npm run start`
 

@@ -16,6 +16,7 @@ import {
   createAgentNotifications,
   markNotificationsDelivered,
 } from "@/lib/ops/notifications";
+import { withJobRun } from "@/lib/jobs";
 import { requireRouteSecret } from "@/lib/route-security";
 
 export const maxDuration = 120;
@@ -44,7 +45,15 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  const results: { tenant: string; telegramUsers: number; notifications?: number; runId?: string; error?: string }[] = [];
+  const results: {
+    tenant: string;
+    telegramUsers: number;
+    notifications?: number;
+    runId?: string;
+    jobRunId?: string;
+    skipped?: boolean;
+    error?: string;
+  }[] = [];
 
   for (const tenant of tenants) {
     const tgUsers = tenant.users.filter((u) => u.telegramId);
@@ -68,61 +77,91 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-      await ingestTenantBusinessFacts({
+      const job = await withJobRun({
+        prisma,
         tenantId: tenant.id,
-        reason: "daily_brief",
-      });
-      const briefData = await buildDailyBrief(tenant.id, accessToken);
-      const run = await persistDailyBriefRun(tenant.id, briefData);
-      const notifications = await createAgentNotifications({
-        tenantId: tenant.id,
-        agentRunId: run.id,
-        title: "Daily broker brief",
-        body: notificationBody(briefData),
-        href: "/command",
-        severity:
-          briefData.pendingApprovalCount > 0 || briefData.complianceFlagCount > 0
-            ? AgentNotificationSeverity.ACTION
-            : AgentNotificationSeverity.INFO,
-        metadata: {
-          source: "daily_brief",
-          activeCount: briefData.activeCount,
-          pendingApprovalCount: briefData.pendingApprovalCount,
-          campaignGapCount: briefData.campaignGapCount,
-          complianceFlagCount: briefData.complianceFlagCount,
+        kind: "daily_brief",
+        key: `daily-brief:${tenant.id}`,
+        trigger: "cron",
+        ttlMs: 15 * 60 * 1000,
+        metadata: { tenantName: tenant.name },
+        summarize: (result) => `Daily brief produced ${result.notifications} notification(s).`,
+        resultMetadata: (result) => ({
+          tenantName: tenant.name,
+          telegramUsers: result.telegramUsers,
+          notifications: result.notifications,
+          runId: result.runId,
+        }),
+        run: async () => {
+          await ingestTenantBusinessFacts({
+            tenantId: tenant.id,
+            reason: "daily_brief",
+          });
+          const briefData = await buildDailyBrief(tenant.id, accessToken);
+          const run = await persistDailyBriefRun(tenant.id, briefData);
+          const notifications = await createAgentNotifications({
+            tenantId: tenant.id,
+            agentRunId: run.id,
+            title: "Daily broker brief",
+            body: notificationBody(briefData),
+            href: "/command",
+            severity:
+              briefData.pendingApprovalCount > 0 || briefData.complianceFlagCount > 0
+                ? AgentNotificationSeverity.ACTION
+                : AgentNotificationSeverity.INFO,
+            metadata: {
+              source: "daily_brief",
+              activeCount: briefData.activeCount,
+              pendingApprovalCount: briefData.pendingApprovalCount,
+              campaignGapCount: briefData.campaignGapCount,
+              complianceFlagCount: briefData.complianceFlagCount,
+            },
+          });
+
+          const deliveredIds: string[] = [];
+          for (const user of tgUsers) {
+            if (!botToken) continue;
+            const chatId = Number(user.telegramId);
+            if (!chatId || isNaN(chatId)) continue;
+
+            const userName = user.name?.split(" ")[0] ?? "there";
+            const messages = formatBriefForTelegram(briefData, userName);
+
+            try {
+              await sendTelegramMessages(botToken, chatId, messages);
+              deliveredIds.push(...notifications.filter((n) => n.userId === user.id).map((n) => n.id));
+            } catch (e) {
+              console.error(
+                `[daily-brief-cron] Failed to send to ${user.telegramId}:`,
+                e
+              );
+            }
+          }
+          await markNotificationsDelivered({
+            ids: deliveredIds,
+            channel: ChannelKind.TELEGRAM,
+          });
+
+          return {
+            tenant: tenant.name,
+            telegramUsers: tgUsers.length,
+            notifications: notifications.length,
+            runId: run.id,
+          };
         },
       });
 
-      const deliveredIds: string[] = [];
-      for (const user of tgUsers) {
-        if (!botToken) continue;
-        const chatId = Number(user.telegramId);
-        if (!chatId || isNaN(chatId)) continue;
-
-        const userName = user.name?.split(" ")[0] ?? "there";
-        const messages = formatBriefForTelegram(briefData, userName);
-
-        try {
-          await sendTelegramMessages(botToken, chatId, messages);
-          deliveredIds.push(...notifications.filter((n) => n.userId === user.id).map((n) => n.id));
-        } catch (e) {
-          console.error(
-            `[daily-brief-cron] Failed to send to ${user.telegramId}:`,
-            e
-          );
-        }
-      }
-      await markNotificationsDelivered({
-        ids: deliveredIds,
-        channel: ChannelKind.TELEGRAM,
-      });
-
-      results.push({
-        tenant: tenant.name,
-        telegramUsers: tgUsers.length,
-        notifications: notifications.length,
-        runId: run.id,
-      });
+      results.push(
+        job.status === "skipped"
+          ? {
+              tenant: tenant.name,
+              telegramUsers: tgUsers.length,
+              jobRunId: job.jobRunId,
+              skipped: true,
+              error: "Skipped because another daily brief is active.",
+            }
+          : { ...job.result, jobRunId: job.jobRunId }
+      );
     } catch (e) {
       console.error(
         `[daily-brief-cron] Failed for tenant ${tenant.name}:`,

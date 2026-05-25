@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withJobRun } from "@/lib/jobs";
 import { prisma } from "@/lib/prisma";
 import { requireRouteSecret } from "@/lib/route-security";
 import { syncZillowProfileSource } from "@/lib/zillow-sync";
@@ -53,37 +54,69 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No Zillow sources found" }, { status: 404 });
   }
 
-  console.log(`[zillow-sync-api] Syncing ${sources.length} source(s)`);
+  const jobKey = sourceId
+    ? `zillow-source:${sourceId}`
+    : tenantId
+      ? `zillow-tenant:${tenantId}`
+      : "zillow-all";
 
-  const results = [];
-  for (const src of sources) {
-    console.log(`[zillow-sync-api] Syncing source ${src.id} (${src.profileUrl})`);
-    const result = await syncZillowProfileSource(src.id);
-    results.push({
-      sourceId: src.id,
-      profileUrl: src.profileUrl,
-      tenantId: src.tenantId,
-      ...result,
-    });
+  const job = await withJobRun({
+    prisma,
+    kind: "zillow_sync",
+    key: jobKey,
+    trigger: "api",
+    ttlMs: 30 * 60 * 1000,
+    metadata: { sourceId, tenantId, syncAll, sourceCount: sources.length },
+    summarize: (result) => `Synced ${result.synced} Zillow source(s).`,
+    resultMetadata: (result) => ({
+      totalImported: result.totalImported,
+      totalDetailed: result.totalDetailed,
+      totalErrors: result.totalErrors,
+      totalDurationMs: result.totalDurationMs,
+    }),
+    run: async () => {
+      console.log(`[zillow-sync-api] Syncing ${sources.length} source(s)`);
+
+      const results = [];
+      for (const src of sources) {
+        console.log(`[zillow-sync-api] Syncing source ${src.id} (${src.profileUrl})`);
+        const result = await syncZillowProfileSource(src.id);
+        results.push({
+          sourceId: src.id,
+          profileUrl: src.profileUrl,
+          tenantId: src.tenantId,
+          ...result,
+        });
+      }
+
+      const totalImported = results.reduce((s, r) => s + r.imported, 0);
+      const totalDetailed = results.reduce((s, r) => s + r.detailed, 0);
+      const totalErrors = results.reduce((s, r) => s + r.errors.length, 0);
+      const totalDuration = results.reduce((s, r) => s + r.durationMs, 0);
+
+      console.log(
+        `[zillow-sync-api] Done: ${totalImported} imported, ${totalDetailed} detailed, ${totalErrors} errors, ${totalDuration}ms total`
+      );
+
+      return {
+        synced: results.length,
+        totalImported,
+        totalDetailed,
+        totalErrors,
+        totalDurationMs: totalDuration,
+        results,
+      };
+    },
+  });
+
+  if (job.status === "skipped") {
+    return NextResponse.json(
+      { error: "Zillow sync already running.", jobRunId: job.jobRunId },
+      { status: 409 }
+    );
   }
 
-  const totalImported = results.reduce((s, r) => s + r.imported, 0);
-  const totalDetailed = results.reduce((s, r) => s + r.detailed, 0);
-  const totalErrors = results.reduce((s, r) => s + r.errors.length, 0);
-  const totalDuration = results.reduce((s, r) => s + r.durationMs, 0);
-
-  console.log(
-    `[zillow-sync-api] Done: ${totalImported} imported, ${totalDetailed} detailed, ${totalErrors} errors, ${totalDuration}ms total`
-  );
-
-  return NextResponse.json({
-    synced: results.length,
-    totalImported,
-    totalDetailed,
-    totalErrors,
-    totalDurationMs: totalDuration,
-    results,
-  });
+  return NextResponse.json({ ...job.result, jobRunId: job.jobRunId });
 }
 
 /**

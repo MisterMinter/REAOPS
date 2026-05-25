@@ -98,6 +98,7 @@ model Tenant {
   agentLoops            AgentLoop[]
   agentRuns             AgentRun[]
   agentNotifications    AgentNotification[]
+  jobRuns               JobRun[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -286,6 +287,13 @@ enum AgentNotificationSeverity {
   ACTION
   WARNING
   CRITICAL
+}
+
+enum JobRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
 }
 
 model User {
@@ -913,6 +921,38 @@ model AgentNotification {
   @@index([tenantId, readAt])
   @@index([tenantId, userId, readAt])
   @@index([tenantId, agentRunId])
+}
+
+model JobLock {
+  key         String   @id
+  owner      String
+  lockedUntil DateTime
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([lockedUntil])
+}
+
+model JobRun {
+  id         String       @id @default(cuid())
+  tenantId   String?
+  tenant     Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kind       String
+  key        String
+  status     JobRunStatus @default(RUNNING)
+  trigger    String       @default("manual")
+  owner      String?
+  summary    String?      @db.Text
+  error      String?      @db.Text
+  metadata   Json?
+  startedAt  DateTime     @default(now())
+  finishedAt DateTime?
+  createdAt  DateTime     @default(now())
+
+  @@index([tenantId, startedAt])
+  @@index([kind, status])
+  @@index([key, startedAt])
 }
 
 model CachedListing {
