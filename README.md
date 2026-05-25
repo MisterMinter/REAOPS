@@ -10,6 +10,8 @@ AI-powered real estate brokerage assistant. An agentic backend built on Next.js 
 - **Google Calendar** — List upcoming events, create showings / open houses, and add attendees.
 - **Follow-ups** — Draft email and SMS follow-up copy for leads and contacts; create calendar reminders for outreach.
 - **Portfolio analysis** — Summarize active listings by status, flag high days-on-market properties, suggest priority actions, and generate a daily brief.
+- **Tenant brain** — Optional GBrain-backed durable brokerage memory for tenant-scoped facts, decisions, brand rules, SOPs, and agent-run summaries.
+- **Content review gates** — Brand, factual, and compliance review runs before outbound/publishable content is sent, saved to Drive, or published.
 - **Buffer** — Create social media drafts (stub — OAuth integration planned for Phase 2).
 - **Zillow** — Scrape public Zillow profile pages to import listing links (best-effort; datacenter IPs are often blocked).
 
@@ -30,6 +32,8 @@ Web Chat ──fetch───▸ /api/agent/chat     ──▸ AgentCore
 - **Agent core** — `src/agent/core.ts` orchestrates the Vercel AI SDK loop, loads per-user context, and persists conversations.
 - **Skills** — `src/agent/skills/*.ts` — each file exports tool definitions (Zod schemas + execute functions).
 - **System prompt** — `src/agent/system-prompt.ts` — built dynamically from tenant data, Drive config, listing counts, and user role.
+- **Tenant brain** — `src/lib/tenant-brain/*` keeps GBrain behind a swappable interface; Prisma remains the source of truth.
+- **Content review** — `src/lib/content-review` hard-gates outbound or publishable content with `PASS`, `BLOCK`, or `NEEDS_HUMAN`.
 - **AI providers** — Gemini 2.0 Flash (preferred), Claude, or GPT-4o-mini, configurable via `AI_PROVIDER` env var.
 
 ## Local development
@@ -43,6 +47,8 @@ npm run dev
 ```
 
 **Minimum env vars:** `DATABASE_URL`, `AUTH_SECRET`, `NEXTAUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and at least one AI key (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY`).
+
+**Optional tenant brain:** set `GBRAIN_BASE_URL` and `GBRAIN_API_KEY` to enable the shared GBrain memory gateway. If unset, the app runs with Prisma/tool context only.
 
 Google sign-in only works for emails already in the `User` table. The seed creates the first platform admin. Add others under **Admin → Users** before they sign in.
 

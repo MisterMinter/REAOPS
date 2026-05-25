@@ -15,10 +15,19 @@ import {
 import { generateText } from "ai";
 import { resolveLanguageModel } from "@/lib/ai-chat";
 import { sendChannelMessage } from "@/lib/channels";
+import {
+  extractReviewStatus,
+  mergeMetadataWithReview,
+  reviewContent,
+  reviewToJson,
+  type ContentReviewResult,
+  type ContentReviewKind,
+} from "@/lib/content-review";
 import { getGoogleAccessTokenForUser } from "@/lib/google-account-token";
 import { syncPendingTouchpointsToHubSpot, syncTouchpointToHubSpot } from "@/lib/hubspot";
 import { ensureOpsDefaults } from "@/lib/ops/defaults";
 import { prisma as defaultPrisma } from "@/lib/prisma";
+import { getTenantBrain } from "@/lib/tenant-brain";
 
 export type Actor = {
   id: string;
@@ -186,7 +195,15 @@ export async function draftMessage(input: {
     }));
   const risk = classifyMessageRisk(`${input.subject ?? ""}\n${body}\n${task?.context ?? ""}`);
   const mode = tenant?.defaultApprovalMode ?? ApprovalMode.AUTO_SEND_LOW_RISK;
-  const needsApproval = requiresApproval(mode, risk);
+  const review = await reviewContent({
+    prisma,
+    tenantId: input.actor.tenantId,
+    actorId: input.actor.id,
+    kind: contentReviewKindForChannel(channel),
+    subject: input.subject || defaultSubject(task?.title),
+    content: body,
+  });
+  const needsApproval = requiresApproval(mode, risk) || review.status !== "PASS";
   const recipient = input.recipient ?? defaultRecipient(contact, channel);
   const identity = await resolveSendingIdentity(prisma, input.actor.tenantId, channel);
 
@@ -204,6 +221,7 @@ export async function draftMessage(input: {
       status: needsApproval ? MessageDraftStatus.WAITING_APPROVAL : MessageDraftStatus.APPROVED,
       sendingIdentityId: identity?.id ?? null,
       createdByUserId: input.actor.id,
+      metadata: mergeMetadataWithReview(null, review),
     },
   });
 
@@ -215,6 +233,18 @@ export async function draftMessage(input: {
         taskId: task?.id ?? null,
         requestedForId: task?.ownerUserId ?? contact?.ownerUserId ?? input.actor.id,
       },
+    });
+  }
+  if (review.status !== "PASS") {
+    await createContentComplianceReview({
+      prisma,
+      actor: input.actor,
+      title: `Review gated ${channel} draft: ${draft.subject ?? "Message"}`,
+      summary: `Content review returned ${review.status}. ${review.reasons.join(" ")}`,
+      draftId: draft.id,
+      contactId: contact?.id ?? input.contactId ?? null,
+      taskId: task?.id ?? input.taskId ?? null,
+      review,
     });
   }
 
@@ -231,6 +261,7 @@ export async function draftMessage(input: {
     channel,
     risk,
     requiresApproval: needsApproval,
+    contentReviewStatus: review.status,
   });
 
   if (!needsApproval && input.autoSend) {
@@ -252,6 +283,9 @@ export async function approveDraft(input: {
     where: { id: input.draftId, tenantId: input.actor.tenantId },
   });
   if (!draft) throw new Error("Draft not found.");
+  if ((input.approve ?? true) && extractReviewStatus(draft.metadata) === "BLOCK") {
+    throw new Error("This draft is blocked by content review. Revise it before approval.");
+  }
 
   const approved = input.approve ?? true;
   const status = approved ? ApprovalStatus.APPROVED : ApprovalStatus.REJECTED;
@@ -281,6 +315,14 @@ export async function approveDraft(input: {
   }
 
   await logAudit(prisma, input.actor, approved ? "message.approve" : "message.reject", "MessageDraft", draft.id);
+  await captureTenantBrainDecision({
+    prisma,
+    actor: input.actor,
+    subjectType: "MessageDraft",
+    subjectId: draft.id,
+    decision: approved ? "approved" : "rejected",
+    rationale: input.reason ?? null,
+  });
   return updated;
 }
 
@@ -295,7 +337,7 @@ export async function reviseDraft(input: {
   const prisma = input.prisma ?? defaultPrisma;
   const draft = await prisma.messageDraft.findFirst({
     where: { id: input.draftId, tenantId: input.actor.tenantId },
-    include: { task: true, contact: true },
+    include: { task: { include: { listing: true } }, contact: true },
   });
   if (!draft) throw new Error("Draft not found.");
   if (
@@ -316,7 +358,16 @@ export async function reviseDraft(input: {
   const recipient = input.recipient ?? draft.recipient;
   const risk = classifyMessageRisk(`${subject ?? ""}\n${body}\n${draft.task?.context ?? ""}`);
   const mode = tenant?.defaultApprovalMode ?? ApprovalMode.AUTO_SEND_LOW_RISK;
-  const needsApproval = requiresApproval(mode, risk);
+  const review = await reviewContent({
+    prisma,
+    tenantId: input.actor.tenantId,
+    actorId: input.actor.id,
+    kind: contentReviewKindForChannel(draft.channel),
+    subject,
+    content: body,
+    facts: draft.task?.listing ? listingFactsForReview(draft.task.listing) : null,
+  });
+  const needsApproval = requiresApproval(mode, risk) || review.status !== "PASS";
 
   await prisma.approval.updateMany({
     where: {
@@ -342,6 +393,7 @@ export async function reviseDraft(input: {
       requiresApproval: needsApproval,
       status: needsApproval ? MessageDraftStatus.WAITING_APPROVAL : MessageDraftStatus.APPROVED,
       approvedAt: null,
+      metadata: mergeMetadataWithReview(draft.metadata as Prisma.InputJsonValue, review),
     },
   });
 
@@ -353,6 +405,18 @@ export async function reviseDraft(input: {
         taskId: draft.taskId,
         requestedForId: draft.task?.ownerUserId ?? draft.contact?.ownerUserId ?? input.actor.id,
       },
+    });
+  }
+  if (review.status !== "PASS") {
+    await createContentComplianceReview({
+      prisma,
+      actor: input.actor,
+      title: `Review gated revised ${draft.channel} draft: ${subject ?? "Message"}`,
+      summary: `Content review returned ${review.status}. ${review.reasons.join(" ")}`,
+      draftId: draft.id,
+      contactId: draft.contactId,
+      taskId: draft.taskId,
+      review,
     });
   }
 
@@ -369,6 +433,7 @@ export async function reviseDraft(input: {
   await logAudit(prisma, input.actor, "message.revise", "MessageDraft", draft.id, {
     risk,
     requiresApproval: needsApproval,
+    contentReviewStatus: review.status,
   });
   return updated;
 }
@@ -381,9 +446,43 @@ export async function sendApprovedMessage(input: {
   const prisma = input.prisma ?? defaultPrisma;
   const draft = await prisma.messageDraft.findFirst({
     where: { id: input.draftId, tenantId: input.actor.tenantId },
-    include: { contact: true, task: true },
+    include: { contact: true, task: { include: { listing: true } } },
   });
   if (!draft) throw new Error("Draft not found.");
+  let reviewStatus = extractReviewStatus(draft.metadata);
+  if (!reviewStatus) {
+    const review = await reviewContent({
+      prisma,
+      tenantId: input.actor.tenantId,
+      actorId: input.actor.id,
+      kind: contentReviewKindForChannel(draft.channel),
+      subject: draft.subject,
+      content: draft.body,
+      facts: draft.task?.listing ? listingFactsForReview(draft.task.listing) : null,
+    });
+    reviewStatus = review.status;
+    await prisma.messageDraft.update({
+      where: { id: draft.id },
+      data: {
+        metadata: mergeMetadataWithReview(draft.metadata as Prisma.InputJsonValue, review),
+      },
+    });
+    if (review.status !== "PASS") {
+      await createContentComplianceReview({
+        prisma,
+        actor: input.actor,
+        title: `Review gated send: ${draft.subject ?? "Message"}`,
+        summary: `Content review returned ${review.status}. ${review.reasons.join(" ")}`,
+        draftId: draft.id,
+        contactId: draft.contactId,
+        taskId: draft.taskId,
+        review,
+      });
+    }
+  }
+  if (reviewStatus === "BLOCK") {
+    throw new Error("This draft is blocked by content review. Revise it before sending.");
+  }
   if (draft.requiresApproval && draft.status !== MessageDraftStatus.APPROVED) {
     throw new Error("Draft requires approval before sending.");
   }
@@ -520,6 +619,17 @@ export async function generateMarketingAsset(input: {
   metadata?: Prisma.InputJsonValue;
 }) {
   const prisma = input.prisma ?? defaultPrisma;
+  const review = input.content
+    ? await reviewContent({
+        prisma,
+        tenantId: input.actor.tenantId,
+        actorId: input.actor.id,
+        kind: contentReviewKindForAsset(input.type),
+        title: input.title,
+        content: input.content,
+        facts: input.listingId ? await marketingAssetListingFacts(prisma, input.actor.tenantId, input.listingId) : null,
+      })
+    : null;
   const asset = await prisma.marketingAsset.create({
     data: {
       tenantId: input.actor.tenantId,
@@ -528,13 +638,26 @@ export async function generateMarketingAsset(input: {
       type: input.type,
       title: input.title,
       content: input.content || null,
-      metadata: input.metadata,
-      status: MarketingAssetStatus.GENERATED,
+      metadata: review ? mergeMetadataWithReview(input.metadata, review) : input.metadata,
+      status: review && review.status !== "PASS" ? MarketingAssetStatus.DRAFT : MarketingAssetStatus.GENERATED,
       createdByUserId: input.actor.id,
     },
   });
+  if (review && review.status !== "PASS") {
+    await createContentComplianceReview({
+      prisma,
+      actor: input.actor,
+      title: `Review gated marketing asset: ${input.title}`,
+      summary: `Content review returned ${review.status}. ${review.reasons.join(" ")}`,
+      listingId: input.listingId,
+      contactId: input.contactId,
+      marketingAssetId: asset.id,
+      review,
+    });
+  }
   await logAudit(prisma, input.actor, "marketing.asset.create", "MarketingAsset", asset.id, {
     type: input.type,
+    contentReviewStatus: review?.status ?? null,
   });
   return asset;
 }
@@ -704,6 +827,123 @@ async function resolveSendingIdentity(
     where: { tenantId, channel, isDefault: true },
     orderBy: { updatedAt: "desc" },
   });
+}
+
+function contentReviewKindForChannel(channel: ChannelKind): ContentReviewKind {
+  if (channel === ChannelKind.GMAIL) return "EMAIL";
+  return "TEXT";
+}
+
+function contentReviewKindForAsset(type: MarketingAssetType): ContentReviewKind {
+  if (type === MarketingAssetType.FLYER) return "FLYER";
+  if (type === MarketingAssetType.MLS_COPY) return "MLS_COPY";
+  if (type === MarketingAssetType.EMAIL_COPY) return "EMAIL";
+  if (type === MarketingAssetType.SOCIAL_COPY || type === MarketingAssetType.SOCIAL_IMAGE) {
+    return "SOCIAL_POST";
+  }
+  return "MARKETING_ASSET";
+}
+
+function listingFactsForReview(listing: {
+  address?: string | null;
+  priceDisplay?: string | null;
+  beds?: number | null;
+  baths?: number | null;
+  sqft?: number | null;
+  status?: string | null;
+  features?: string | null;
+}) {
+  return {
+    address: listing.address ?? null,
+    priceDisplay: listing.priceDisplay ?? null,
+    beds: listing.beds ?? null,
+    baths: listing.baths ?? null,
+    sqft: listing.sqft ?? null,
+    status: listing.status ?? null,
+    features: listing.features ?? null,
+  };
+}
+
+async function marketingAssetListingFacts(
+  prisma: PrismaClient,
+  tenantId: string,
+  listingId: string
+) {
+  const listing = await prisma.listing.findFirst({
+    where: { id: listingId, tenantId },
+    select: {
+      address: true,
+      priceDisplay: true,
+      beds: true,
+      baths: true,
+      sqft: true,
+      status: true,
+      features: true,
+    },
+  });
+  return listing ? listingFactsForReview(listing) : null;
+}
+
+async function createContentComplianceReview(input: {
+  prisma: PrismaClient;
+  actor: Actor;
+  title: string;
+  summary: string;
+  draftId?: string | null;
+  taskId?: string | null;
+  contactId?: string | null;
+  listingId?: string | null;
+  marketingAssetId?: string | null;
+  review: ContentReviewResult;
+}) {
+  return createComplianceReview({
+    prisma: input.prisma,
+    actor: input.actor,
+    title: input.title,
+    summary: input.summary,
+    contactId: input.contactId,
+    listingId: input.listingId,
+    flags: {
+      source: "content_review",
+      draftId: input.draftId ?? null,
+      taskId: input.taskId ?? null,
+      marketingAssetId: input.marketingAssetId ?? null,
+      review: reviewToJson(input.review),
+    },
+  });
+}
+
+async function captureTenantBrainDecision(input: {
+  prisma: PrismaClient;
+  actor: Actor;
+  subjectType: string;
+  subjectId: string;
+  decision: string;
+  rationale?: string | null;
+  metadata?: Prisma.InputJsonValue;
+}) {
+  try {
+    await getTenantBrain().captureDecision({
+      tenantId: input.actor.tenantId,
+      userId: input.actor.id,
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      decision: input.decision,
+      rationale: input.rationale ?? null,
+      metadata: input.metadata,
+    });
+  } catch (e) {
+    await input.prisma.auditEvent.create({
+      data: {
+        tenantId: input.actor.tenantId,
+        userId: input.actor.id,
+        action: "tenant_brain.capture_decision_failed",
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        metadata: { error: e instanceof Error ? e.message : "Tenant brain decision capture failed." },
+      },
+    });
+  }
 }
 
 async function logAudit(

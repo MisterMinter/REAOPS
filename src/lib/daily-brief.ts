@@ -3,6 +3,8 @@ import { google } from "googleapis";
 import { generateText } from "ai";
 import { resolveLanguageModel } from "@/lib/ai-chat";
 import { getDriveClient } from "@/lib/drive";
+import { getTenantBrain } from "@/lib/tenant-brain";
+import type { TenantBrainMemory } from "@/lib/tenant-brain/types";
 
 export type ListingHighlight = {
   address: string;
@@ -61,6 +63,15 @@ export type DailyBriefData = {
   marketingItems: MarketingItem[];
 
   complianceStandard: string;
+  pendingApprovalCount: number;
+  openTaskCount: number;
+  waitingDraftCount: number;
+  campaignGapCount: number;
+  complianceFlagCount: number;
+  recentChanges: string[];
+  missingInfo: string[];
+  tenantBrainMemories: TenantBrainMemory[];
+  tenantBrainError: string | null;
 
   recommendation: string | null;
 };
@@ -330,6 +341,72 @@ export async function buildDailyBrief(
     }
   }
 
+  const [openTasks, pendingApprovals, waitingDraftCount, activeCampaigns, activeCompliance, recentAuditEvents] =
+    await Promise.all([
+      prisma.followUpTask.findMany({
+        where: { tenantId, status: { in: ["OPEN", "DRAFTED", "WAITING_APPROVAL", "APPROVED"] } },
+        include: { contact: true, listing: true },
+        orderBy: [{ dueAt: "asc" }, { createdAt: "desc" }],
+        take: 12,
+      }),
+      prisma.approval.count({ where: { tenantId, status: "PENDING" } }),
+      prisma.messageDraft.count({ where: { tenantId, status: "WAITING_APPROVAL" } }),
+      prisma.marketingCampaign.findMany({
+        where: { tenantId, status: { in: ["ACTIVE", "PAUSED"] } },
+        include: {
+          items: {
+            where: { status: { in: ["DRAFT", "NEEDS_REVIEW"] } },
+            take: 6,
+          },
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 12,
+      }),
+      prisma.complianceReview.findMany({
+        where: { tenantId, status: { in: ["OPEN", "IN_REVIEW", "FLAGGED", "NEEDS_HUMAN"] } },
+        orderBy: [{ deadlineAt: "asc" }, { createdAt: "desc" }],
+        take: 12,
+      }),
+      prisma.auditEvent.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+      }),
+    ]);
+
+  const campaignGapCount =
+    activeCampaigns.filter((campaign) => campaign.items.length > 0).length +
+    listings.filter((listing) => normalizeStatusBucket(listing.status) === "active" && !listing.driveFolderId).length;
+  const complianceFlagCount = activeCompliance.length;
+  const recentChanges = recentAuditEvents.map((event) => {
+    const subject = event.subjectType ? `${event.subjectType}${event.subjectId ? ` ${event.subjectId.slice(0, 8)}` : ""}` : "workspace";
+    return `${event.action} on ${subject}`;
+  });
+  const missingInfo = [
+    !tenant?.driveConfig?.rootFolderId ? "Google Drive root folder is not configured." : "",
+    calendarError ? `Calendar/Drive access issue: ${calendarError}` : "",
+    listings.filter((listing) => normalizeStatusBucket(listing.status) === "active" && !listing.driveFolderId).length > 0
+      ? "Some active listings are missing linked Drive folders."
+      : "",
+    pendingApprovals > 0 ? `${pendingApprovals} approval(s) are waiting.` : "",
+    activeCompliance.length > 0 ? `${activeCompliance.length} compliance review(s) are open or flagged.` : "",
+  ].filter(Boolean);
+
+  let tenantBrainMemories: TenantBrainMemory[] = [];
+  let tenantBrainError: string | null = null;
+  try {
+    const result = await getTenantBrain().query({
+      tenantId,
+      query:
+        "Daily broker brief: current brokerage priorities, stale leads, listing gaps, pending approvals, brand/compliance warnings, and missing information.",
+      limit: 5,
+    });
+    tenantBrainMemories = result.memories;
+    tenantBrainError = result.error ?? (result.degraded ? "Tenant brain is not configured." : null);
+  } catch (e) {
+    tenantBrainError = e instanceof Error ? e.message : "Tenant brain query failed.";
+  }
+
   // --- AI recommendation ---
   let recommendation: string | null = null;
   const flagged = listings.filter(
@@ -382,6 +459,15 @@ export async function buildDailyBrief(
     followUp,
     marketingItems,
     complianceStandard: tenant?.complianceStandard ?? "ga_residential",
+    pendingApprovalCount: pendingApprovals,
+    openTaskCount: openTasks.length,
+    waitingDraftCount,
+    campaignGapCount,
+    complianceFlagCount,
+    recentChanges,
+    missingInfo,
+    tenantBrainMemories,
+    tenantBrainError,
     recommendation,
   };
 }

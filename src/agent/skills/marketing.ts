@@ -3,6 +3,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 import { resolveLanguageModel } from "@/lib/ai-chat";
+import { reviewContent, reviewToJson } from "@/lib/content-review";
 import {
   marketingSystemPrompt,
   marketingUserPrompt,
@@ -12,7 +13,7 @@ import {
 import { createListingLaunchPack } from "@/lib/marketing/launch-pack";
 import { prisma } from "@/lib/prisma";
 import { getDriveClient } from "@/lib/drive";
-import { generateMarketingAsset } from "@/lib/ops/workflows";
+import { createComplianceReview, generateMarketingAsset } from "@/lib/ops/workflows";
 import { MarketingAssetType } from "@prisma/client";
 
 export function marketingTools(ctx: ToolContext) {
@@ -157,6 +158,32 @@ export function marketingTools(ctx: ToolContext) {
         content: z.string().describe("Text content to write into the doc."),
       }),
       execute: async ({ folderId, title, content }) => {
+        if (!ctx.tenantId) return { error: "No brokerage assigned." };
+        const review = await reviewContent({
+          tenantId: ctx.tenantId,
+          actorId: ctx.userId,
+          kind: "DRIVE_DOC",
+          title,
+          content,
+        });
+        if (review.status !== "PASS") {
+          await createComplianceReview({
+            actor: { id: ctx.userId, tenantId: ctx.tenantId },
+            title: `Review gated Drive doc: ${title}`,
+            summary: `Content review returned ${review.status}. ${review.reasons.join(" ")}`,
+            flags: {
+              source: "content_review",
+              driveFolderId: folderId,
+              review: reviewToJson(review),
+            },
+          });
+          return {
+            saved: false,
+            blocked: review.status === "BLOCK",
+            needsHuman: review.status === "NEEDS_HUMAN",
+            review,
+          };
+        }
         if (!ctx.accessToken) return { error: "No Drive token." };
         const drive = getDriveClient(ctx.accessToken);
         const res = await drive.files.create({

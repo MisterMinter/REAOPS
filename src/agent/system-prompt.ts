@@ -1,4 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
+import type { AgentMemoryContext } from "@/lib/tenant-brain/agent-memory";
+import { formatAgentMemoryForPrompt } from "@/lib/tenant-brain/agent-memory";
 
 export type AgentContext = {
   userId: string;
@@ -83,7 +85,7 @@ export async function buildAgentContext(
   };
 }
 
-export function buildSystemPrompt(ctx: AgentContext): string {
+export function buildSystemPrompt(ctx: AgentContext, memory?: AgentMemoryContext): string {
   const lines = [
     "You are RE Agent OS, an AI-powered real estate brokerage assistant.",
     "You have tools (skills) to manage Google Drive files, look up property listings, create durable listing launch campaigns, generate marketing copy, create print-ready PDF flyers and social-media images, email flyers via Gmail, manage Google Calendar events, draft follow-up messages, run always-on brokerage operating loops, and analyze the broker's portfolio.",
@@ -99,6 +101,8 @@ export function buildSystemPrompt(ctx: AgentContext): string {
     ctx.bufferConfigured
       ? "Buffer: connected — you can list profiles and create social media drafts."
       : "Buffer: not configured (BUFFER_ACCESS_TOKEN missing). Mention this if user asks about social posting.",
+    "",
+    memory ? formatAgentMemoryForPrompt(memory) : "",
     "",
     "Guidelines:",
     "- Be concise. Prefer bullet points and short paragraphs.",

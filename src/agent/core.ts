@@ -7,6 +7,8 @@ import {
 } from "@/lib/ai-chat";
 import { prisma } from "@/lib/prisma";
 import { buildAgentContext, buildSystemPrompt } from "@/agent/system-prompt";
+import { loadAgentMemoryContext } from "@/lib/tenant-brain/agent-memory";
+import { ingestTenantBusinessFacts } from "@/lib/tenant-brain/ingest";
 import { driveTools } from "@/agent/skills/drive";
 import { listingTools } from "@/agent/skills/listings";
 import { zillowTools } from "@/agent/skills/zillow";
@@ -52,7 +54,22 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
     };
   }
 
-  const system = buildSystemPrompt(ctx);
+  if (ctx.tenantId && process.env.GBRAIN_BASE_URL?.trim()) {
+    await ingestTenantBusinessFacts({
+      prisma,
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      reason: "agent_run_context",
+    }).catch((e) => console.error("[tenant-brain] agent context ingest failed:", e));
+  }
+
+  const memory = await loadAgentMemoryContext({
+    prisma,
+    tenantId: ctx.tenantId,
+    userId: ctx.userId,
+    messages: input.messages,
+  });
+  const system = buildSystemPrompt(ctx, memory);
 
   const accessToken = await getAccessToken(input.userId);
   const toolCtx = {

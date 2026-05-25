@@ -6,6 +6,8 @@ import {
   listSubfolders,
   listPhotosInFolder,
 } from "@/lib/drive";
+import { reviewContent, reviewToJson } from "@/lib/content-review";
+import { createComplianceReview } from "@/lib/ops/workflows";
 
 export function driveTools(ctx: ToolContext) {
   function requireToken() {
@@ -93,6 +95,32 @@ export function driveTools(ctx: ToolContext) {
         content: z.string().describe("Plain-text body to write into the doc."),
       }),
       execute: async ({ folderId, title, content }) => {
+        if (!ctx.tenantId) return { error: "No brokerage assigned." };
+        const review = await reviewContent({
+          tenantId: ctx.tenantId,
+          actorId: ctx.userId,
+          kind: "DRIVE_DOC",
+          title,
+          content,
+        });
+        if (review.status !== "PASS") {
+          await createComplianceReview({
+            actor: { id: ctx.userId, tenantId: ctx.tenantId },
+            title: `Review gated Drive doc: ${title}`,
+            summary: `Content review returned ${review.status}. ${review.reasons.join(" ")}`,
+            flags: {
+              source: "content_review",
+              driveFolderId: folderId,
+              review: reviewToJson(review),
+            },
+          });
+          return {
+            created: false,
+            blocked: review.status === "BLOCK",
+            needsHuman: review.status === "NEEDS_HUMAN",
+            review,
+          };
+        }
         const token = requireToken();
         const drive = getDriveClient(token);
         const res = await drive.files.create({

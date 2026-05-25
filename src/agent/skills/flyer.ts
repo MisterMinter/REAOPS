@@ -2,13 +2,14 @@ import { generateObject, tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
 import { resolveLanguageModel } from "@/lib/ai-chat";
+import { reviewContent, reviewToJson } from "@/lib/content-review";
 import { prisma } from "@/lib/prisma";
 import { getDriveClient, listPhotosInFolder } from "@/lib/drive";
 import { renderFlyerHtml, type FlyerData } from "@/lib/flyer-templates";
 import { renderFlyerPdf, renderFlyerPng } from "@/lib/flyer-render";
 import { parseBrandKit, type BrandKit } from "@/lib/marketing/brand-kit";
 import { sendEmail } from "@/lib/gmail-send";
-import { generateMarketingAsset } from "@/lib/ops/workflows";
+import { createComplianceReview, generateMarketingAsset } from "@/lib/ops/workflows";
 import { MarketingAssetType } from "@prisma/client";
 import { Readable } from "stream";
 
@@ -42,6 +43,7 @@ export function flyerTools(ctx: ToolContext) {
         templateStyle: z.enum(["modern", "luxury", "bold"]).optional().describe("Override AI template choice."),
       }),
       execute: async (params) => {
+        if (!ctx.tenantId) return { error: "No brokerage assigned." };
         const model = resolveLanguageModel();
         if (!model) return { error: "No AI provider configured." };
 
@@ -60,6 +62,34 @@ export function flyerTools(ctx: ToolContext) {
         const copy = aiCopy.object;
         if (params.templateStyle) copy.templateStyle = params.templateStyle;
         copy.accentColor = broker.brandKit.accentColor || copy.accentColor;
+        const copyText = flyerCopyText(copy, broker.brandKit.disclaimer);
+        const review = await reviewContent({
+          tenantId: ctx.tenantId,
+          actorId: ctx.userId,
+          kind: "FLYER",
+          title: `Flyer - ${facts.address}`,
+          content: copyText,
+          facts,
+        });
+        if (review.status !== "PASS") {
+          await createComplianceReview({
+            actor: { id: ctx.userId, tenantId: ctx.tenantId },
+            title: `Review gated flyer: ${facts.address}`,
+            summary: `Content review returned ${review.status}. ${review.reasons.join(" ")}`,
+            flags: {
+              source: "content_review",
+              listingId: params.listingId ?? null,
+              address: facts.address,
+              review: reviewToJson(review),
+            },
+          });
+          return {
+            success: false,
+            blocked: review.status === "BLOCK",
+            needsHuman: review.status === "NEEDS_HUMAN",
+            review,
+          };
+        }
 
         const flyerData: FlyerData = {
           ...copy,
@@ -118,7 +148,7 @@ export function flyerTools(ctx: ToolContext) {
             actor: { id: ctx.userId, tenantId: ctx.tenantId },
             type: MarketingAssetType.FLYER,
             title: pdfName,
-            content: `${copy.headline}\n\n${copy.tagline}\n\n${copy.featureBullets.join("\n")}\n\n${copy.ctaText}`,
+            content: copyText,
             metadata: {
               listingId: params.listingId ?? null,
               address: facts.address,
@@ -155,6 +185,7 @@ export function flyerTools(ctx: ToolContext) {
         templateStyle: z.enum(["modern", "luxury", "bold"]).optional(),
       }),
       execute: async ({ listingId, recipientEmail, templateStyle }) => {
+        if (!ctx.tenantId) return { error: "No brokerage assigned." };
         if (!ctx.accessToken) return { error: "No Google token — cannot send email." };
         const toEmail = recipientEmail || ctx.flyerNotifyEmail;
         if (!toEmail) return { error: "No recipient email provided and no default flyer notification email configured in settings." };
@@ -176,6 +207,34 @@ export function flyerTools(ctx: ToolContext) {
         const copy = aiCopy.object;
         if (templateStyle) copy.templateStyle = templateStyle;
         copy.accentColor = broker.brandKit.accentColor || copy.accentColor;
+        const copyText = flyerCopyText(copy, broker.brandKit.disclaimer);
+        const review = await reviewContent({
+          tenantId: ctx.tenantId,
+          actorId: ctx.userId,
+          kind: "FLYER",
+          title: `Flyer email - ${facts.address}`,
+          content: copyText,
+          facts,
+        });
+        if (review.status !== "PASS") {
+          await createComplianceReview({
+            actor: { id: ctx.userId, tenantId: ctx.tenantId },
+            title: `Review gated flyer email: ${facts.address}`,
+            summary: `Content review returned ${review.status}. ${review.reasons.join(" ")}`,
+            flags: {
+              source: "content_review",
+              listingId,
+              recipientEmail: toEmail,
+              review: reviewToJson(review),
+            },
+          });
+          return {
+            success: false,
+            blocked: review.status === "BLOCK",
+            needsHuman: review.status === "NEEDS_HUMAN",
+            review,
+          };
+        }
 
         const flyerData: FlyerData = {
           ...copy,
@@ -219,6 +278,12 @@ export function flyerTools(ctx: ToolContext) {
       },
     }),
   };
+}
+
+function flyerCopyText(copy: z.infer<typeof flyerCopySchema>, disclaimer?: string | null) {
+  return `${copy.headline}\n\n${copy.tagline}\n\n${copy.featureBullets.join("\n")}\n\n${copy.ctaText}${
+    disclaimer ? `\n\n${disclaimer}` : ""
+  }`;
 }
 
 type ListingFacts = {

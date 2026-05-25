@@ -1,6 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ToolContext } from "./types";
+import { reviewContent, reviewToJson } from "@/lib/content-review";
+import { createComplianceReview } from "@/lib/ops/workflows";
 
 const BUFFER_API = "https://api.bufferapp.com/1";
 
@@ -42,7 +44,7 @@ async function bufferPost(path: string, token: string, params: Record<string, st
   return res.json();
 }
 
-export function bufferTools(_ctx: ToolContext) {
+export function bufferTools(ctx: ToolContext) {
   return {
     buffer_list_profiles: tool({
       description:
@@ -93,9 +95,36 @@ export function bufferTools(_ctx: ToolContext) {
           .describe("Optional image URL to attach as media[photo]."),
       }),
       execute: async ({ text, profileIds, scheduledAt, mediaUrl }) => {
+        if (!ctx.tenantId) return { error: "No brokerage assigned." };
         const token = getBufferToken();
         if (!token) {
           return { error: "Buffer is not configured. Set BUFFER_ACCESS_TOKEN on the server." };
+        }
+        const review = await reviewContent({
+          tenantId: ctx.tenantId,
+          actorId: ctx.userId,
+          kind: "SOCIAL_POST",
+          title: scheduledAt ? "Scheduled Buffer post" : "Buffer draft",
+          content: text,
+        });
+        if (review.status !== "PASS") {
+          await createComplianceReview({
+            actor: { id: ctx.userId, tenantId: ctx.tenantId },
+            title: "Review gated Buffer post",
+            summary: `Content review returned ${review.status}. ${review.reasons.join(" ")}`,
+            flags: {
+              source: "content_review",
+              scheduledAt: scheduledAt ?? null,
+              mediaUrl: mediaUrl ?? null,
+              review: reviewToJson(review),
+            },
+          });
+          return {
+            success: false,
+            blocked: review.status === "BLOCK",
+            needsHuman: review.status === "NEEDS_HUMAN",
+            review,
+          };
         }
 
         try {

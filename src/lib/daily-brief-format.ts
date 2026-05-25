@@ -163,7 +163,43 @@ function buildMarketingSection(data: DailyBriefData): string {
 function buildComplianceSection(data: DailyBriefData): string {
   const lines = [section("📋", "COMPLIANCE")];
   lines.push(`Standard: <b>${esc(data.complianceStandard)}</b>`);
-  lines.push("<i>Document tracking coming soon.</i>");
+  lines.push(`Open/flagged reviews: <b>${data.complianceFlagCount}</b>`);
+  lines.push(`Pending approvals: <b>${data.pendingApprovalCount}</b>`);
+  return lines.join("\n");
+}
+
+function buildOpsSection(data: DailyBriefData): string {
+  const lines = [section("🧠", "BROKERAGE BRAIN")];
+  lines.push(`Open tasks: <b>${data.openTaskCount}</b>`);
+  lines.push(`Drafts waiting: <b>${data.waitingDraftCount}</b>`);
+  lines.push(`Campaign gaps: <b>${data.campaignGapCount}</b>`);
+
+  if (data.tenantBrainError) {
+    lines.push(`<i>Tenant brain note: ${esc(data.tenantBrainError)}</i>`);
+  } else if (data.tenantBrainMemories.length > 0) {
+    lines.push("");
+    lines.push("<b>Memory context:</b>");
+    for (const memory of data.tenantBrainMemories.slice(0, 3)) {
+      lines.push(bullet(`${esc(memory.title)} — ${esc(memory.content.slice(0, 160))}`));
+    }
+  }
+
+  if (data.missingInfo.length > 0) {
+    lines.push("");
+    lines.push("<b>Missing / stale info:</b>");
+    for (const item of data.missingInfo.slice(0, 5)) {
+      lines.push(bullet(esc(item)));
+    }
+  }
+
+  if (data.recentChanges.length > 0) {
+    lines.push("");
+    lines.push("<b>Recent changes:</b>");
+    for (const item of data.recentChanges.slice(0, 4)) {
+      lines.push(bullet(esc(item)));
+    }
+  }
+
   return lines.join("\n");
 }
 
@@ -193,6 +229,7 @@ export function formatBriefForTelegram(
     buildFollowUpSection(data),
     buildMarketingSection(data),
     buildComplianceSection(data),
+    buildOpsSection(data),
     buildRecommendationSection(data),
   ].filter(Boolean);
 
@@ -297,6 +334,30 @@ export function formatBriefPlainText(
   }
   if (data.marketingItems.length === 0) {
     lines.push("No Drive-linked listings to check.");
+  }
+
+  lines.push("");
+  lines.push(`📋 COMPLIANCE / OPS`);
+  lines.push(`Pending approvals: ${data.pendingApprovalCount}`);
+  lines.push(`Open tasks: ${data.openTaskCount}`);
+  lines.push(`Waiting drafts: ${data.waitingDraftCount}`);
+  lines.push(`Campaign gaps: ${data.campaignGapCount}`);
+  lines.push(`Open/flagged compliance reviews: ${data.complianceFlagCount}`);
+
+  if (data.missingInfo.length > 0) {
+    lines.push("Missing / stale info:");
+    for (const item of data.missingInfo.slice(0, 5)) {
+      lines.push(` • ${item}`);
+    }
+  }
+
+  if (data.tenantBrainMemories.length > 0) {
+    lines.push("Tenant brain context:");
+    for (const memory of data.tenantBrainMemories.slice(0, 3)) {
+      lines.push(` • ${memory.title}: ${memory.content.slice(0, 160)}`);
+    }
+  } else if (data.tenantBrainError) {
+    lines.push(`Tenant brain note: ${data.tenantBrainError}`);
   }
 
   if (data.recommendation) {

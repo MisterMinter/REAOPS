@@ -11,7 +11,8 @@ import { renderFlyerHtml, type FlyerData } from "@/lib/flyer-templates";
 import { renderFlyerPdf, renderFlyerPng } from "@/lib/flyer-render";
 import { parseBrandKit } from "@/lib/marketing/brand-kit";
 import { sendEmail } from "@/lib/gmail-send";
-import { generateMarketingAsset } from "@/lib/ops/workflows";
+import { reviewContent, reviewToJson } from "@/lib/content-review";
+import { createComplianceReview, generateMarketingAsset } from "@/lib/ops/workflows";
 import { Readable } from "stream";
 
 const flyerCopySchema = z.object({
@@ -191,6 +192,38 @@ export async function POST(req: NextRequest) {
   const copy = aiCopy.object;
   if (templateStyle) copy.templateStyle = templateStyle;
   copy.accentColor = brandKit.accentColor || copy.accentColor;
+  const copyText = `${copy.headline}\n\n${copy.tagline}\n\n${copy.featureBullets.join("\n")}\n\n${copy.ctaText}\n\n${brandKit.disclaimer}`;
+  const review = await reviewContent({
+    tenantId,
+    actorId: session.user.id,
+    kind: "FLYER",
+    title: `Flyer - ${facts.address}`,
+    content: copyText,
+    facts,
+  });
+  if (review.status !== "PASS") {
+    await createComplianceReview({
+      actor: {
+        id: session.user.id,
+        tenantId,
+        role: session.user.role,
+      },
+      title: `Review gated flyer: ${facts.address}`,
+      summary: `Content review returned ${review.status}. ${review.reasons.join(" ")}`,
+      flags: {
+        source: "content_review",
+        cachedListingId: listing?.id ?? null,
+        address: facts.address,
+        review: reviewToJson(review),
+      },
+    });
+    return NextResponse.json({
+      success: false,
+      blocked: review.status === "BLOCK",
+      needsHuman: review.status === "NEEDS_HUMAN",
+      review,
+    });
+  }
 
   const flyerData: FlyerData = {
     ...copy,
@@ -286,7 +319,7 @@ export async function POST(req: NextRequest) {
       },
       type: MarketingAssetType.FLYER,
       title: pdfName,
-      content: `${copy.headline}\n\n${copy.tagline}\n\n${copy.featureBullets.join("\n")}\n\n${copy.ctaText}`,
+      content: copyText,
       metadata: {
         address: facts.address,
         cachedListingId: listing?.id ?? null,
