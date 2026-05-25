@@ -75,6 +75,7 @@ model Tenant {
   activityLogs          ActivityLog[]
   cachedListings        CachedListing[]
   cachedContacts        CachedContact[]
+  mlsProviderConfigs    MlsProviderConfig[]
   zillowProfileSources  ZillowProfileSource[]
   leadSources           LeadSource[]
   pipelines             Pipeline[]
@@ -153,6 +154,26 @@ model DriveConfig {
   folderMapping Json?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model MlsProviderConfig {
+  id              String    @id @default(cuid())
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  providerKey     String
+  label           String
+  region          String?
+  enabled         Boolean   @default(true)
+  status          String    @default("configured")
+  config          Json?
+  secretRef       String?
+  lastSyncedAt    DateTime?
+  lastSyncError   String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([tenantId, providerKey])
+  @@index([tenantId, enabled])
 }
 
 // ─── Users & Roles ───────────────────────────────────────────

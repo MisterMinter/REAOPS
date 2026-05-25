@@ -43,6 +43,22 @@ type Props = {
   updateProfile: (formData: FormData) => Promise<void>;
   updateDrive: (formData: FormData) => Promise<void>;
   uploadLogo: (formData: FormData) => Promise<void>;
+  mlsProviders: Array<{
+    key: string;
+    label: string;
+    description: string;
+    configHelp: string;
+  }>;
+  mlsConfigs: Array<{
+    id: string;
+    providerKey: string;
+    label: string;
+    region: string | null;
+    enabled: boolean;
+    status: string;
+    lastSyncedAt: Date | null;
+    lastSyncError: string | null;
+  }>;
   zillowSources: Array<{
     id: string;
     profileUrl: string;
@@ -52,6 +68,10 @@ type Props = {
     lastSyncError: string | null;
   }>;
   tenantUsers: Array<{ id: string; name: string | null; email: string }>;
+  addMlsProvider: (formData: FormData) => Promise<void>;
+  setMlsProviderEnabled: (formData: FormData) => Promise<void>;
+  removeMlsProvider: (formData: FormData) => Promise<void>;
+  syncMlsProvider: (formData: FormData) => Promise<void>;
   addZillowProfile: (formData: FormData) => Promise<void>;
   removeZillowProfile: (formData: FormData) => Promise<void>;
   syncZillowProfile: (formData: FormData) => Promise<void>;
@@ -81,8 +101,14 @@ export function SettingsForms({
   updateProfile,
   updateDrive,
   uploadLogo,
+  mlsProviders,
+  mlsConfigs,
   zillowSources,
   tenantUsers,
+  addMlsProvider,
+  setMlsProviderEnabled,
+  removeMlsProvider,
+  syncMlsProvider,
   addZillowProfile,
   removeZillowProfile,
   syncZillowProfile,
@@ -327,13 +353,188 @@ export function SettingsForms({
       </section>
 
       <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 lg:col-span-2">
-        <h2 className="font-display text-lg text-[var(--gold)]">Zillow · listing import (experimental)</h2>
+        <h2 className="font-display text-lg text-[var(--gold)]">MLS provider feeds</h2>
+        <p className="mt-2 max-w-3xl text-sm text-[var(--txt2)]">
+          MLS should be the primary listing source for brokerage facts. Add one provider per market or board, then use
+          Zillow only as a best-effort fallback when MLS, CRM, and Drive do not have a listing yet.
+        </p>
+        {disabledNote && <p className="mt-2 text-sm text-[var(--amber)]">{disabledNote}</p>}
+
+        {canEdit && (
+          <form action={addMlsProvider} className="mt-4 grid gap-4 border-t border-[var(--border)] pt-4 md:grid-cols-2">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Provider</label>
+              <select
+                name="providerKey"
+                className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)]"
+                defaultValue={mlsProviders[0]?.key ?? ""}
+                required
+              >
+                {mlsProviders.map((provider) => (
+                  <option key={provider.key} value={provider.key}>
+                    {provider.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Label</label>
+              <input
+                name="label"
+                placeholder="GA MLS · Atlanta"
+                className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)]"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Region / market</label>
+              <input
+                name="region"
+                placeholder="Atlanta, GA"
+                className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)]"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Endpoint / base URL</label>
+              <input
+                name="baseUrl"
+                type="url"
+                placeholder="https://mls.example.com/reso/odata/Property"
+                className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)]"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">OData query</label>
+              <input
+                name="query"
+                placeholder="$filter=StandardStatus eq 'Active'&$top=100"
+                className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)]"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">API token / secret</label>
+              <input
+                name="secret"
+                type="password"
+                placeholder="Stored encrypted"
+                className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--txt)]"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">
+                Manual listings JSON
+              </label>
+              <textarea
+                name="manualListings"
+                rows={4}
+                placeholder='[{"externalId":"A123","address":"123 Main St","city":"Atlanta","state":"GA","price":500000,"beds":3,"baths":2}]'
+                className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 font-mono text-xs text-[var(--txt)]"
+              />
+              <p className="mt-1 text-xs text-[var(--txt3)]">
+                Use Manual JSON for exports while a board-specific provider adapter is being added. Generic RESO uses
+                endpoint, query, and token fields.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input id="mls-enabled" name="enabled" type="checkbox" defaultChecked />
+              <label htmlFor="mls-enabled" className="text-sm text-[var(--txt2)]">Enabled for scheduled sync</label>
+            </div>
+            <div className="md:text-right">
+              <button
+                type="submit"
+                className="rounded-md bg-[var(--teal)]/20 px-4 py-2 text-sm font-semibold text-[var(--teal)]"
+              >
+                Add MLS provider
+              </button>
+            </div>
+          </form>
+        )}
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          {mlsProviders.map((provider) => (
+            <div key={provider.key} className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4 text-sm">
+              <div className="font-medium text-[var(--txt)]">{provider.label}</div>
+              <p className="mt-1 text-xs text-[var(--txt3)]">{provider.description}</p>
+              <p className="mt-2 text-xs text-[var(--txt2)]">{provider.configHelp}</p>
+            </div>
+          ))}
+        </div>
+
+        <ul className="mt-6 space-y-4">
+          {mlsConfigs.length === 0 ? (
+            <li className="text-sm text-[var(--txt3)]">No MLS providers configured yet.</li>
+          ) : (
+            mlsConfigs.map((config) => (
+              <li
+                key={config.id}
+                className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--txt2)]"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-[var(--txt)]">{config.label}</div>
+                    <p className="mt-1 text-xs text-[var(--txt3)]">
+                      {config.providerKey}
+                      {config.region ? ` · ${config.region}` : ""} · {config.enabled ? "enabled" : "disabled"} ·{" "}
+                      {config.status}
+                    </p>
+                  </div>
+                  <span className={config.enabled ? "text-xs font-semibold text-[var(--green)]" : "text-xs text-[var(--txt3)]"}>
+                    {config.enabled ? "Primary feed" : "Paused"}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-[var(--txt3)]">
+                  {config.lastSyncedAt
+                    ? `Last sync: ${config.lastSyncedAt.toLocaleString()}`
+                    : "Never synced"}
+                  {config.lastSyncError && (
+                    <span className="mt-1 block text-[var(--coral)]">Error: {config.lastSyncError}</span>
+                  )}
+                </p>
+                {canEdit && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <form action={syncMlsProvider}>
+                      <input type="hidden" name="id" value={config.id} />
+                      <button
+                        type="submit"
+                        className="rounded-md border border-[var(--border2)] px-3 py-1.5 text-xs text-[var(--txt)]"
+                      >
+                        Sync now
+                      </button>
+                    </form>
+                    <form action={setMlsProviderEnabled}>
+                      <input type="hidden" name="id" value={config.id} />
+                      <input type="hidden" name="enabled" value={config.enabled ? "false" : "true"} />
+                      <button
+                        type="submit"
+                        className="rounded-md border border-[var(--border2)] px-3 py-1.5 text-xs text-[var(--txt2)]"
+                      >
+                        {config.enabled ? "Pause" : "Enable"}
+                      </button>
+                    </form>
+                    <form action={removeMlsProvider}>
+                      <input type="hidden" name="id" value={config.id} />
+                      <button
+                        type="submit"
+                        className="rounded-md border border-[var(--coral)]/50 px-3 py-1.5 text-xs text-[var(--coral)]"
+                      >
+                        Remove
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </li>
+            ))
+          )}
+        </ul>
+      </section>
+
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 lg:col-span-2">
+        <h2 className="font-display text-lg text-[var(--gold)]">Zillow fallback import</h2>
         <p className="mt-2 max-w-3xl text-sm text-[var(--txt2)]">
           Add public <strong className="text-[var(--txt)]">zillow.com</strong> profile or team URLs (broker page, agent
           page, etc.). <strong className="text-[var(--txt)]">Sync</strong> fetches HTML and tries to extract listing
           links — Zillow changes pages often, so results vary. <strong className="text-[var(--txt)]">HTTP 403</strong>{" "}
           from this app on Railway is common (Zillow blocks many datacenter IPs). Respect Zillow&apos;s terms; treat
-          this as experimental — Drive or manual URLs are more reliable.
+          this as fallback only after MLS, CRM, or Drive cannot provide the listing.
         </p>
         {disabledNote && <p className="mt-2 text-sm text-[var(--amber)]">{disabledNote}</p>}
 

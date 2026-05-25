@@ -12,7 +12,7 @@ export function zillowTools(ctx: ToolContext) {
   return {
     zillow_scrape_profile: tool({
       description:
-        "Scrape a Zillow agent/broker profile page to get their active listings, sold listings, rentals, and contact info. Uses Firecrawl v2 with structured JSON extraction.",
+        "Fallback-only: scrape a Zillow agent/broker profile page when MLS/CRM/Drive do not have the listing yet. Gets active listings, sold listings, rentals, and contact info using Firecrawl v2 structured extraction; do not treat scraped facts as source of truth.",
       parameters: z.object({
         url: z.string().url().describe("Zillow profile URL (e.g. https://www.zillow.com/profile/username)."),
       }),
@@ -39,7 +39,7 @@ export function zillowTools(ctx: ToolContext) {
 
     zillow_scrape_listing: tool({
       description:
-        "Scrape a single Zillow listing page for full property details: description, photos, features, schools, tax info, walk score, etc. Uses Firecrawl v2 with split schema extraction (basic facts + features + neighborhood in parallel).",
+        "Fallback-only: scrape a single Zillow listing page when official MLS/CRM/Drive facts are missing. Gets property details such as description, photos, features, schools, tax info, and walk score; caveat scraped facts before using them in publishable work.",
       parameters: z.object({
         url: z.string().url().describe("Full Zillow listing URL (homedetails page)."),
       }),
@@ -54,7 +54,7 @@ export function zillowTools(ctx: ToolContext) {
 
     zillow_sync_profile: tool({
       description:
-        "Sync a saved Zillow profile source into cached listings. Scrapes the profile, batch-scrapes all active listing details concurrently, and stores everything in the database. Returns import count, detail count, errors, and duration.",
+        "Fallback-only: sync a saved Zillow profile source into cached listings after MLS/CRM options have been checked. Scrapes the profile, batch-scrapes active listing details, and stores best-effort data with zillow: source IDs.",
       parameters: z.object({
         profileSourceId: z.string().describe("The ZillowProfileSource ID from Settings."),
       }),

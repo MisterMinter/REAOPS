@@ -66,8 +66,10 @@ function sourceBadge(source: MarketingListingSource) {
     hubspot: "HubSpot",
     drive: "Drive",
     both: "HubSpot + Drive",
-    zillow: "Zillow",
-    zillow_drive: "Zillow + Drive",
+    mls: "MLS",
+    mls_drive: "MLS + Drive",
+    zillow: "Zillow fallback",
+    zillow_drive: "Zillow fallback + Drive",
   };
   return map[source];
 }
@@ -408,7 +410,7 @@ export function MarketingPackWorkspace({
   if (listings.length === 0) {
     return (
       <p className="text-sm text-[var(--txt2)]">
-        Add a Drive root in Settings or sync listings — then pick a property here.
+        Add a Drive root in Settings or sync MLS listings — then pick a property here.
       </p>
     );
   }
@@ -536,7 +538,7 @@ export function MarketingPackWorkspace({
         <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
           <h3 className="font-display text-lg text-[var(--gold)]">Listing facts</h3>
           <p className="mt-1 text-xs text-[var(--txt3)]">
-            Pulled from CRM/Zillow when available; edit freely for Drive-only folders before generating.
+            Pulled from MLS/CRM when available; edit freely for Drive-only folders or Zillow fallback rows before generating.
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="block sm:col-span-2">

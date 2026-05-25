@@ -106,7 +106,7 @@ export default async function MarketingPage() {
         <h1 className="font-display text-3xl text-[var(--txt)]">Listing Marketing Pack</h1>
         <p className="mt-2 max-w-2xl text-[var(--txt2)]">
           Select listings, photos, and generate MLS descriptions, captions, and email lines. Connect Google Drive for
-          photo folders; HubSpot is optional when you want CRM-backed fields.
+          photo folders; configure MLS feeds first, then HubSpot/CRM and Zillow fallback as needed.
         </p>
         <div className="mt-8 rounded-lg border border-[var(--amber)]/40 bg-[var(--amber)]/5 p-6">
           <p className="text-sm text-[var(--txt2)]">
@@ -179,7 +179,7 @@ export default async function MarketingPage() {
     }
   }
 
-  // Auto-link Drive folders to Zillow/CRM listings by fuzzy address match
+  // Auto-link Drive folders to MLS/CRM/Zillow listings by fuzzy address match
   // (persists driveFolderId so duplicates are merged on next load too)
   await autoLinkDriveFolders(cachedSlices, driveFolders);
 
@@ -250,7 +250,7 @@ export default async function MarketingPage() {
         <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">Properties</div>
           <div className="mt-2 font-display text-3xl text-[var(--gold)]">{rows.length}</div>
-          <p className="mt-2 text-xs text-[var(--txt3)]">Drive folders + CRM / Zillow rows</p>
+          <p className="mt-2 text-xs text-[var(--txt3)]">MLS / CRM rows + Drive folders</p>
         </div>
         <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--txt3)]">HubSpot</div>
@@ -294,7 +294,7 @@ export default async function MarketingPage() {
             <Link href="/settings" className="text-[var(--teal)] hover:underline">
               Settings → Google Drive
             </Link>
-            , set the root folder with one subfolder per listing. Or sync from HubSpot / Zillow when configured.
+            , set the root folder with one subfolder per listing. Or sync from MLS first, then HubSpot or Zillow fallback when configured.
           </p>
         </section>
       ) : (

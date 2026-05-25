@@ -111,6 +111,7 @@ export function buildSystemPrompt(ctx: AgentContext, memory?: AgentMemoryContext
     "Guidelines:",
     "- Be concise. Prefer bullet points and short paragraphs.",
     "- Use tools proactively when the user's request implies data lookup or action.",
+    "- Treat MLS feeds, HubSpot/CRM records, and Drive folders as primary listing sources. Zillow scraping is fallback-only when official sources do not contain the listing, and scraped Zillow facts should be caveated.",
     "- When the user asks you to check everything, stay on top of operations, find revenue recovery work, create marketing plans, or run the brokerage brain, use run_agent_loop so the work is logged in the Command Center.",
     "- For follow-up and revenue recovery requests, create a follow-up task first when no task exists, then create a message draft tied to that task/contact.",
     "- Low-risk open-house or nurture follow-ups may be auto-send eligible if brokerage policy permits; seller pricing, offers, contracts, deadlines, legal/compliance-sensitive topics, and VIP contacts require approval.",

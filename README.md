@@ -5,7 +5,7 @@ AI-powered real estate brokerage assistant. An agentic backend built on Next.js 
 ## What it does
 
 - **Google Drive** — List, search, move files, and create Google Docs across a shared Drive folder tree organized by listing address.
-- **Property listings** — Search and inspect cached listings sourced from Drive folders, HubSpot sync, or Zillow profile scraping.
+- **Property listings** — Search and inspect cached listings sourced from MLS feeds, Drive folders, HubSpot sync, or Zillow fallback scraping.
 - **Marketing generation** — Generate MLS descriptions, Instagram captions, email subject lines, and social card copy from listing facts and hero photos, then save results as Docs in Drive.
 - **Google Calendar** — List upcoming events, create showings / open houses, and add attendees.
 - **Follow-ups** — Draft email and SMS follow-up copy for leads and contacts; create calendar reminders for outreach.
@@ -13,7 +13,8 @@ AI-powered real estate brokerage assistant. An agentic backend built on Next.js 
 - **Tenant brain** — Optional GBrain-backed durable brokerage memory for tenant-scoped facts, decisions, brand rules, SOPs, and agent-run summaries.
 - **Content review gates** — Brand, factual, and compliance review runs before outbound/publishable content is sent, saved to Drive, or published.
 - **Buffer** — Tenant-scoped OAuth connection, social profile selection, review-gated draft/scheduled post creation.
-- **Zillow** — Scrape public Zillow profile pages to import listing links (best-effort; datacenter IPs are often blocked).
+- **MLS providers** — Tenant-scoped provider registry with Manual JSON and Generic RESO/OData scaffolds; Zillow is fallback-only.
+- **Zillow fallback** — Scrape public Zillow profile pages to import listing links when MLS/CRM/Drive are missing data (best-effort; datacenter IPs are often blocked).
 
 The agent runs a multi-step loop (`generateText` with `tools` + `maxSteps`) so it can chain tool calls autonomously — e.g. look up a listing, pull its photos from Drive, generate a marketing pack, and save the result back as a Doc, all from a single user message.
 
@@ -26,7 +27,7 @@ Web Chat ──fetch───▸ /api/agent/chat     ──▸ AgentCore
                                           ToolRegistry
                                                │
                ┌───────┬───────┬──────┬────────┼────────┬──────────┬────────┐
-             Drive  Listings Zillow Marketing Buffer Calendar Follow-up Analysis
+             Drive  Listings MLS/Zillow Marketing Buffer Calendar Follow-up Analysis
 ```
 
 - **Agent core** — `src/agent/core.ts` orchestrates the Vercel AI SDK loop, loads per-user context, and persists conversations.
@@ -34,6 +35,7 @@ Web Chat ──fetch───▸ /api/agent/chat     ──▸ AgentCore
 - **System prompt** — `src/agent/system-prompt.ts` — built dynamically from tenant data, Drive config, listing counts, and user role.
 - **Tenant brain** — `src/lib/tenant-brain/*` keeps GBrain behind a swappable interface; Prisma remains the source of truth.
 - **Content review** — `src/lib/content-review` hard-gates outbound or publishable content with `PASS`, `BLOCK`, or `NEEDS_HUMAN`.
+- **MLS sync** — `src/lib/mls/*` normalizes tenant provider feeds into cached listings; Zillow remains a fallback import path.
 - **AI providers** — Gemini 2.0 Flash (preferred), Claude, or GPT-4o-mini, configurable via `AI_PROVIDER` env var.
 
 ## Local development
@@ -76,9 +78,14 @@ The app requests: `openid`, `email`, `profile`, `drive` (full), `calendar`, `gma
 - **Cron secrets** — set `CRON_SECRET`, `ZILLOW_SYNC_SECRET`, and `TELEGRAM_WEBHOOK_SECRET`; production routes fail closed when these are missing.
 - **Health checks** — `/api/health` is shallow; `/api/health?deep=1` checks GBrain, jobs, channel config, and recent failures.
 - **Cron routes** — call `/api/cron/daily-brief`, `/api/cron/agent-loops`, and `/api/cron/tenant-brain` with `Authorization: Bearer $CRON_SECRET` for briefs, autonomous loops, and scheduled GBrain backfill/consolidation.
+- **MLS cron** — call `/api/cron/mls-sync` with `Authorization: Bearer $CRON_SECRET` to sync enabled MLS providers for active tenants.
 - **Build:** `npm run build`
 - **Start:** `npx prisma migrate deploy && npm run start`
 
 ### Tenant logos
 
 Stored in the database as a **data URL** (PNG, JPEG, WebP, or GIF, ~400 KB max).
+
+## Management guide
+
+See [docs/management/README.md](docs/management/README.md) for first-time deployment, tenant onboarding, MLS provider setup, GBrain operations, review gates, channel troubleshooting, incident handling, and release checklists.

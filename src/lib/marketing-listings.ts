@@ -1,10 +1,10 @@
 /**
- * Marketing pack can combine HubSpot/Zillow-synced rows (CachedListing) with
+ * Marketing pack can combine MLS/HubSpot/Zillow-synced rows (CachedListing) with
  * Drive-only property folders (subfolders of the tenant root, named by address).
  *
  * Dedup strategy: fuzzy-match Drive folder names against CachedListing addresses
- * to auto-link them. Zillow data is treated as primary (richer info), and the
- * Drive folder is attached for photos/documents.
+ * to auto-link them. MLS and CRM are treated as primary fact sources; Zillow is
+ * a best-effort fallback when official feeds are unavailable.
  */
 
 import { prisma } from "@/lib/prisma";
@@ -13,6 +13,8 @@ export type MarketingListingSource =
   | "hubspot"
   | "drive"
   | "both"
+  | "mls"
+  | "mls_drive"
   | "zillow"
   | "zillow_drive";
 
@@ -36,7 +38,10 @@ type CachedListingSlice = {
 type DriveFolderSlice = { id: string; name: string | null | undefined };
 
 function rowSourceFromCached(c: CachedListingSlice): MarketingListingSource {
+  const fromMls = c.hubspotId.startsWith("mls:");
   const fromZillow = c.hubspotId.startsWith("zillow:");
+  if (fromMls && c.driveFolderId) return "mls_drive";
+  if (fromMls) return "mls";
   if (fromZillow && c.driveFolderId) return "zillow_drive";
   if (fromZillow) return "zillow";
   if (c.driveFolderId) return "both";

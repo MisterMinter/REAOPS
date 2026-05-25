@@ -8,10 +8,12 @@ import { disconnectHubSpot, syncHubSpotForTenant } from "@/lib/hubspot";
 import { disconnectBuffer, selectBufferProfiles } from "@/lib/buffer";
 import { ensureOpsDefaults } from "@/lib/ops/defaults";
 import { canEditBrokerageConfig } from "@/lib/ops/auth";
+import { getMlsProvider } from "@/lib/mls/registry";
+import { syncMlsProviderConfig } from "@/lib/mls/sync";
 import { requireActiveUser, requireTenantUser } from "@/lib/session-guard";
 import { uploadTenantLogo } from "@/lib/storage";
 import { syncZillowProfileSource as runZillowSync } from "@/lib/zillow-sync";
-import { ApprovalMode, ChannelKind, SendingIdentityType } from "@prisma/client";
+import { ApprovalMode, ChannelKind, Prisma, SendingIdentityType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -245,6 +247,116 @@ export async function disconnectBufferAction() {
   await disconnectBuffer({ prisma, tenantId: ctx.tenantId });
   revalidatePath("/settings");
   redirect("/settings?saved=buffer-disconnect");
+}
+
+export async function addMlsProviderConfigAction(formData: FormData) {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+
+  const providerKey = String(formData.get("providerKey") ?? "").trim();
+  const provider = getMlsProvider(providerKey);
+  if (!provider) redirect("/settings?error=mls-provider");
+
+  const label = String(formData.get("label") ?? "").trim() || provider.label;
+  const region = String(formData.get("region") ?? "").trim() || null;
+  const baseUrl = String(formData.get("baseUrl") ?? "").trim();
+  const query = String(formData.get("query") ?? "").trim();
+  const manualListings = String(formData.get("manualListings") ?? "").trim();
+  const secret = String(formData.get("secret") ?? "").trim();
+  const enabled = formData.get("enabled") === "on";
+  const config: Record<string, unknown> = {};
+
+  if (baseUrl) config.baseUrl = baseUrl;
+  if (query) config.query = query;
+  if (manualListings) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(manualListings);
+    } catch {
+      redirect("/settings?error=mls-json");
+    }
+    if (!Array.isArray(parsed)) redirect("/settings?error=mls-json");
+    config.listings = parsed;
+  }
+
+  await prisma.mlsProviderConfig.create({
+    data: {
+      tenantId: ctx.tenantId,
+      providerKey,
+      label,
+      region,
+      enabled,
+      status: enabled ? "configured" : "disabled",
+      config: JSON.parse(JSON.stringify(config)) as Prisma.InputJsonObject,
+      secretRef: secret ? encryptSecret(secret) : null,
+    },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/marketing");
+  redirect("/settings?saved=mls-add");
+}
+
+export async function setMlsProviderEnabledAction(formData: FormData) {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) redirect("/settings?error=mls-id");
+  const enabled = formData.get("enabled") === "true";
+  await prisma.mlsProviderConfig.updateMany({
+    where: { id, tenantId: ctx.tenantId },
+    data: { enabled, status: enabled ? "configured" : "disabled" },
+  });
+
+  revalidatePath("/settings");
+  redirect("/settings?saved=mls-update");
+}
+
+export async function removeMlsProviderConfigAction(formData: FormData) {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) redirect("/settings?error=mls-id");
+
+  await prisma.mlsProviderConfig.deleteMany({
+    where: { id, tenantId: ctx.tenantId },
+  });
+  revalidatePath("/settings");
+  revalidatePath("/marketing");
+  redirect("/settings?saved=mls-remove");
+}
+
+export async function syncMlsProviderConfigAction(formData: FormData) {
+  const ctx = await getTenantEditorContext();
+  if (!ctx?.canEdit) throw new Error("Forbidden");
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) redirect("/settings?error=mls-id");
+
+  let result: Awaited<ReturnType<typeof syncMlsProviderConfig>>;
+  try {
+    result = await syncMlsProviderConfig({
+      prisma,
+      configId: id,
+      tenantId: ctx.tenantId,
+      actorId: ctx.userId,
+      force: true,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "MLS sync failed.";
+    redirect(`/settings?error=mls-sync&detail=${encodeURIComponent(detail)}`);
+  }
+
+  revalidatePath("/settings");
+  revalidatePath("/marketing");
+  if (result.errors.length > 0) {
+    redirect(
+      `/settings?error=mls-sync&imported=${result.imported}&detail=${encodeURIComponent(result.errors[0])}`
+    );
+  }
+  redirect(`/settings?saved=mls-sync&imported=${result.imported}`);
 }
 
 export async function selectBufferProfilesAction(formData: FormData) {

@@ -3,15 +3,19 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import {
   addLeadSourceAction,
+  addMlsProviderConfigAction,
   addSendingIdentityAction,
   addZillowProfileSource,
   checkBlueBubblesAction,
   configureBlueBubblesAction,
   disconnectBufferAction,
   removeZillowProfileSource,
+  removeMlsProviderConfigAction,
   disconnectHubSpotAction,
   selectBufferProfilesAction,
+  setMlsProviderEnabledAction,
   syncHubSpotAction,
+  syncMlsProviderConfigAction,
   syncZillowProfileSourceAction,
   updateAgentLoopAction,
   updateAutomationPolicyAction,
@@ -22,6 +26,7 @@ import {
 } from "@/app/(main)/settings/_actions";
 import { SettingsForms } from "@/app/(main)/settings/settings-forms";
 import { listBufferProfiles } from "@/lib/buffer";
+import { listMlsProviders } from "@/lib/mls/registry";
 import { parseBrandKit } from "@/lib/marketing/brand-kit";
 import { ensureOpsDefaults } from "@/lib/ops/defaults";
 import { hasLegacyRelativeLogoPath, resolveTenantLogoForDisplay } from "@/lib/tenant-logo";
@@ -63,6 +68,7 @@ export default async function SettingsPage({
           hubspotTokens: { select: { id: true, hubId: true, updatedAt: true } },
           bufferTokens: { select: { id: true, updatedAt: true, profileIds: true } },
           driveConfig: { select: { rootFolderId: true, updatedAt: true } },
+          mlsProviderConfigs: { orderBy: [{ enabled: "desc" }, { createdAt: "asc" }] },
           zillowProfileSources: { orderBy: { createdAt: "asc" } },
         },
       })
@@ -103,7 +109,7 @@ export default async function SettingsPage({
       <div>
         <h1 className="font-display text-3xl text-[var(--txt)]">Settings</h1>
         <p className="mt-2 max-w-2xl text-[var(--txt2)]">
-          Brokerage profile, Google Drive listing photos folder, HubSpot sync, Buffer social profiles, and integration status.
+          Brokerage profile, MLS feeds, Google Drive listing photos folder, HubSpot sync, Buffer social profiles, and integration status.
         </p>
       </div>
 
@@ -195,6 +201,26 @@ export default async function SettingsPage({
           Buffer disconnected for this brokerage.
         </p>
       )}
+      {q.saved === "mls-add" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          MLS provider added. Sync it to load listing facts into Marketing.
+        </p>
+      )}
+      {q.saved === "mls-update" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          MLS provider status updated.
+        </p>
+      )}
+      {q.saved === "mls-remove" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          MLS provider removed.
+        </p>
+      )}
+      {q.saved === "mls-sync" && (
+        <p className="rounded-md border border-[var(--green)]/40 bg-[var(--green)]/10 px-4 py-3 text-sm text-[var(--green)]">
+          MLS sync finished. Imported {q.imported ?? "0"} listing(s).
+        </p>
+      )}
       {q.error === "zillow-url" && (
         <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
           Enter a valid Zillow profile URL.
@@ -219,6 +245,27 @@ export default async function SettingsPage({
       {q.error?.startsWith("buffer") && (
         <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
           Buffer error{q.detail ? `: ${decodeURIComponent(q.detail)}` : ""}.
+        </p>
+      )}
+      {q.error === "mls-provider" && (
+        <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
+          Select a registered MLS provider.
+        </p>
+      )}
+      {q.error === "mls-json" && (
+        <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
+          Manual MLS listings must be a JSON array.
+        </p>
+      )}
+      {q.error === "mls-id" && (
+        <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
+          Missing MLS provider id.
+        </p>
+      )}
+      {q.error === "mls-sync" && (
+        <p className="rounded-md border border-[var(--coral)]/40 bg-[var(--coral)]/10 px-4 py-3 text-sm text-[var(--coral)]">
+          MLS sync failed{q.detail ? `: ${decodeURIComponent(q.detail)}` : ""}.
+          {q.imported ? ` Imported ${q.imported} before error.` : ""}
         </p>
       )}
 
@@ -254,8 +301,28 @@ export default async function SettingsPage({
           updateProfile={updateTenantProfile}
           updateDrive={updateDriveRootFolder}
           uploadLogo={uploadTenantLogoFromSettings}
+          mlsProviders={listMlsProviders().map(({ key, label, description, configHelp }) => ({
+            key,
+            label,
+            description,
+            configHelp,
+          }))}
+          mlsConfigs={tenant.mlsProviderConfigs.map((config) => ({
+            id: config.id,
+            providerKey: config.providerKey,
+            label: config.label,
+            region: config.region,
+            enabled: config.enabled,
+            status: config.status,
+            lastSyncedAt: config.lastSyncedAt,
+            lastSyncError: config.lastSyncError,
+          }))}
           zillowSources={tenant.zillowProfileSources}
           tenantUsers={tenantUsers}
+          addMlsProvider={addMlsProviderConfigAction}
+          setMlsProviderEnabled={setMlsProviderEnabledAction}
+          removeMlsProvider={removeMlsProviderConfigAction}
+          syncMlsProvider={syncMlsProviderConfigAction}
           addZillowProfile={addZillowProfileSource}
           removeZillowProfile={removeZillowProfileSource}
           syncZillowProfile={syncZillowProfileSourceAction}
